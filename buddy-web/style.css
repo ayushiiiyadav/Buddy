@@ -1,10 +1,279 @@
-body {
-  background: #f7f7fb;
-  font-family: sans-serif;
+/* ============================================
+   BUDDY — design system
+   Mood: warm, calm, like a trusted journal/companion
+   Palette: soft dusk lavender + warm paper + clay accent
+   ============================================ */
+
+:root {
+  --paper: #FAF7F2;          /* warm off-white background, like paper */
+  --ink: #3A3548;            /* deep soft plum-black for text */
+  --ink-soft: #6E6680;       /* muted secondary text */
+  --buddy-bubble: #F6E9D7;   /* warm honey-cream — Buddy's voice */
+  --buddy-text: #7A4A14;
+  --user-bubble: #E8E2F5;    /* soft lavender-grey — the user's voice */
+  --user-text: #4B3F7A;
+  --accent: #C8862E;         /* warm amber/honey — primary action color */
+  --accent-deep: #A36A1E;
+  --calm-bg: #FBF1DE;        /* gentle warm wash for calming toolkit */
+  --warm-glow: #F6E9D7;      /* soft honey for emotion badge */
+  --warm-glow-text: #7A4A14;
+  --shadow: 0 8px 30px rgba(58, 53, 72, 0.08);
+  --radius-lg: 22px;
+  --radius-md: 14px;
+  --radius-sm: 10px;
 }
 
-h1 {
-  color: #3C3489;
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  background-image: radial-gradient(circle at 15% 0%, #fff 0%, var(--paper) 45%);
+  font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  color: var(--ink);
+  min-height: 100vh;
+}
+
+.chat-screen {
+  display: flex;
+  flex-direction: column;
+  max-width: 460px;
+  height: 92vh;
+  margin: 24px auto;
+  background: #FFFFFF;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  border: 1px solid rgba(58, 53, 72, 0.06);
+}
+
+/* ---------- Header ---------- */
+.title {
   text-align: center;
-  margin-top: 50px;
+  color: var(--accent-deep);
+  padding: 22px 0 18px;
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  border-bottom: 1px solid rgba(58, 53, 72, 0.06);
+  font-family: Georgia, "Times New Roman", serif; /* a touch of warmth/character */
+}
+
+/* ---------- Emotion badge ---------- */
+.emotion-badge {
+  margin: 14px 16px 0;
+  padding: 9px 14px;
+  background: var(--warm-glow);
+  color: var(--warm-glow-text);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  text-align: center;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+}
+
+/* ---------- Chat window ---------- */
+.chat-window {
+  flex: 1;
+  padding: 18px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+
+.chat-bubble {
+  padding: 11px 16px;
+  border-radius: var(--radius-md);
+  max-width: 78%;
+  font-size: 14.5px;
+  line-height: 1.5;
+  animation: riseIn 0.25s ease-out;
+}
+
+@keyframes riseIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.buddy-bubble {
+  background: var(--buddy-bubble);
+  color: var(--buddy-text);
+  align-self: flex-start;
+  border-bottom-left-radius: 4px;
+}
+
+.user-bubble {
+  background: var(--user-bubble);
+  color: var(--user-text);
+  align-self: flex-end;
+  border-bottom-right-radius: 4px;
+}
+
+.typing-bubble {
+  font-style: italic;
+  color: var(--ink-soft);
+  opacity: 0.8;
+}
+
+/* ---------- Calming toolkit ---------- */
+.calming-toolkit {
+  margin: 0 16px 14px;
+  padding: 16px;
+  background: var(--calm-bg);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(107, 92, 165, 0.12);
+}
+
+.calming-title {
+  font-size: 13.5px;
+  color: var(--accent-deep);
+  margin: 0 0 12px;
+  font-weight: 600;
+}
+
+.breathing-box {
+  text-align: center;
+  padding: 20px 16px;
+  background: #FFFFFF;
+  border-radius: var(--radius-sm);
+  margin-bottom: 12px;
+  box-shadow: 0 2px 10px rgba(58, 53, 72, 0.05);
+}
+
+.breathing-text {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--accent-deep);
+  margin: 0 0 12px;
+  min-height: 24px;
+}
+
+.breathing-btn {
+  padding: 9px 18px;
+  border-radius: 999px;
+  border: none;
+  background: var(--accent);
+  color: white;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.breathing-btn:hover:not(:disabled) {
+  background: var(--accent-deep);
+}
+
+.breathing-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.breathing-btn:disabled {
+  background: #E8C896;
+  cursor: not-allowed;
+}
+
+.calming-tips p {
+  font-size: 12.5px;
+  color: var(--accent-deep);
+  margin: 5px 0;
+  opacity: 0.85;
+}
+
+/* ---------- Mode toggle ---------- */
+.mode-toggle {
+  display: flex;
+  gap: 6px;
+  padding: 12px 16px 0;
+}
+
+.mode-btn {
+  flex: 1;
+  padding: 7px 10px;
+  border-radius: 999px;
+  border: 1.5px solid rgba(58, 53, 72, 0.12);
+  background: #FFFFFF;
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.mode-btn:hover {
+  border-color: var(--accent);
+}
+
+.mode-btn-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+/* ---------- Input row ---------- */
+.input-row {
+  display: flex;
+  gap: 10px;
+  padding: 14px 16px;
+  border-top: 1px solid rgba(58, 53, 72, 0.06);
+  background: #FFFFFF;
+}
+
+.chat-input {
+  flex: 1;
+  padding: 11px 14px;
+  border-radius: 999px;
+  border: 1.5px solid rgba(58, 53, 72, 0.12);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s ease;
+  font-family: inherit;
+}
+
+.chat-input:focus {
+  border-color: var(--accent);
+}
+
+.send-btn {
+  padding: 11px 20px;
+  border-radius: 999px;
+  border: none;
+  background: var(--accent);
+  color: white;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.send-btn:hover {
+  background: var(--accent-deep);
+}
+
+.send-btn:active {
+  transform: scale(0.96);
+}
+
+/* ---------- Scrollbar, subtle ---------- */
+.chat-window::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chat-window::-webkit-scrollbar-thumb {
+  background: rgba(58, 53, 72, 0.12);
+  border-radius: 10px;
+}
+
+/* ---------- Mobile ---------- */
+@media (max-width: 480px) {
+  .chat-screen {
+    max-width: 100%;
+    height: 100vh;
+    margin: 0;
+    border-radius: 0;
+  }
 }
