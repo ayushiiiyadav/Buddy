@@ -1,0 +1,11 @@
+# Never upload secrets to GitHub
+.env
+
+# Python stuff that doesn't need to be uploaded
+__pycache__/
+*.pyc
+venv/
+
+# OS junk files
+.DS_Store
+Thumbs.db
