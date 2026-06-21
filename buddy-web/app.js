@@ -89,6 +89,7 @@ function App() {
   const [messages, setMessages] = React.useState([
     { sender: "buddy", text: "Hey! How are you feeling today? 💙" },
   ]);
+  const [isLoadingHistory, setIsLoadingHistory] = React.useState(true);
   const [input, setInput] = React.useState("");
   const [isTyping, setIsTyping] = React.useState(false);
   const [emotion, setEmotion] = React.useState(null);
@@ -103,6 +104,50 @@ function App() {
   const [isAnalyzingVoice, setIsAnalyzingVoice] = React.useState(false);
   const mediaRecorderRef = React.useRef(null);
   const audioChunksRef = React.useRef([]);
+
+  // ---- Load saved chat history once, when the app first opens ----
+  React.useEffect(() => {
+    async function loadHistory() {
+      try {
+        const response = await fetch("http://localhost:8000/history");
+        const data = await response.json();
+
+        if (data.messages && data.messages.length > 0) {
+          const restored = data.messages.map((msg) => ({
+            sender: msg.role === "assistant" ? "buddy" : "user",
+            text: msg.content,
+          }));
+          setMessages(restored);
+
+          // Restore the most recent emotion/intensity reading too, if available
+          const last = data.messages[data.messages.length - 1];
+          if (last.emotion) setEmotion(last.emotion);
+          if (last.intensity != null) setIntensity(last.intensity);
+        }
+      } catch (err) {
+        console.error("Could not load chat history:", err);
+      } finally {
+        setIsLoadingHistory(false);
+      }
+    }
+    loadHistory();
+  }, []); // empty array = runs once, only when the app first loads
+
+  // ---- Clear all saved history ----
+  async function clearHistory() {
+    const confirmed = window.confirm("This will permanently delete all your chat history with Buddy. Continue?");
+    if (!confirmed) return;
+
+    try {
+      await fetch("http://localhost:8000/history", { method: "DELETE" });
+      setMessages([{ sender: "buddy", text: "Hey! How are you feeling today? 💙" }]);
+      setEmotion(null);
+      setIntensity(0);
+      setNeedsSupport(false);
+    } catch (err) {
+      console.error("Could not clear history:", err);
+    }
+  }
 
   function buildHistory(messageList) {
     return messageList.map((msg) => ({
@@ -291,10 +336,17 @@ function App() {
   return e(
     "div",
     { className: "chat-screen" },
-    e("h1", { className: "title" }, "Buddy"),
+    e(
+      "div",
+      { className: "header-row" },
+      e("h1", { className: "title" }, "Buddy"),
+      e("button", { className: "clear-btn", onClick: clearHistory, title: "Clear chat history" }, "🗑️")
+    ),
     e(ModeToggle, { mode, setMode }),
     emotionBadge,
-    e("div", { className: "chat-window" }, chatBubbles),
+    isLoadingHistory
+      ? e("p", { className: "loading-text" }, "Loading your past conversations...")
+      : e("div", { className: "chat-window" }, chatBubbles),
     needsSupport ? e(CalmingToolkit) : null,
     voiceTonePreview,
     e(

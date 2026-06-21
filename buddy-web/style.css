@@ -5,7 +5,7 @@
    ============================================ */
 
 :root {
-  --paper: #FAF7F2;          /* warm off-white background, like paper */
+  --paper: #FAF7F2;          
   --ink: #3A3548;            /* deep soft plum-black for text */
   --ink-soft: #6E6680;       /* muted secondary text */
   --buddy-bubble: #F6E9D7;   /* warm honey-cream — Buddy's voice */
@@ -318,4 +318,4 @@ body {
     margin: 0;
     border-radius: 0;
   }
-}
+} 

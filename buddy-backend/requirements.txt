@@ -4,3 +4,4 @@ openai
 python-dotenv
 librosa 
 python-multipart
+buddy.db

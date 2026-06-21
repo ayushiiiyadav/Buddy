@@ -1,5 +1,5 @@
 # Buddy backend — FastAPI server that talks to Groq
-# Now also analyzes voice tone (pitch, energy, pace) using Librosa
+# Now saves chat history permanently using SQLite (a real database file on your PC)
 
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,6 +12,8 @@ import json
 import librosa
 import numpy as np
 import tempfile
+import sqlite3
+from datetime import datetime
 
 load_dotenv()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
@@ -30,6 +32,65 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ---------- Database setup ----------
+# This creates a file called "buddy.db" right inside buddy-backend/ the first time it runs.
+# SQLite is built into Python — no extra installs needed, no separate server to run.
+DB_PATH = os.path.join(os.path.dirname(__file__), "buddy.db")
+
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            role TEXT NOT NULL,
+            content TEXT NOT NULL,
+            emotion TEXT,
+            intensity INTEGER,
+            timestamp TEXT NOT NULL
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+init_db()  # runs once when the server starts, creates the table if it doesn't exist yet
+
+def save_message(role, content, emotion=None, intensity=None):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO messages (role, content, emotion, intensity, timestamp) VALUES (?, ?, ?, ?, ?)",
+        (role, content, emotion, intensity, datetime.now().isoformat()),
+    )
+    conn.commit()
+    conn.close()
+
+def load_all_messages():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT role, content, emotion, intensity, timestamp FROM messages ORDER BY id ASC")
+    rows = cursor.fetchall()
+    conn.close()
+
+    return [
+        {
+            "role": row[0],
+            "content": row[1],
+            "emotion": row[2],
+            "intensity": row[3],
+            "timestamp": row[4],
+        }
+        for row in rows
+    ]
+
+def clear_all_messages():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM messages")
+    conn.commit()
+    conn.close()
+
+# ---------- Existing chat logic ----------
 class HistoryMessage(BaseModel):
     role: str
     content: str
@@ -38,7 +99,7 @@ class ChatRequest(BaseModel):
     message: str
     history: List[HistoryMessage] = []
     mode: Optional[str] = "auto"
-    voice_tone: Optional[str] = None  # new — a short description of voice tone, if available
+    voice_tone: Optional[str] = None
 
 BUDDY_SYSTEM_PROMPT = """
 You are Buddy — a warm, caring best friend AND a study companion.
@@ -89,7 +150,6 @@ def chat(request: ChatRequest):
         mode_instruction = f"(The user has manually selected '{request.mode}' mode for this message — follow that mode regardless of what you'd otherwise detect, unless intensity is very high.)"
         messages.append({"role": "system", "content": mode_instruction})
 
-    # If we have voice tone info, tell the AI about it alongside the message
     user_content = request.message
     if request.voice_tone:
         user_content = f"{request.message}\n\n[Voice tone detected: {request.voice_tone}]"
@@ -105,31 +165,46 @@ def chat(request: ChatRequest):
     raw_reply = response.choices[0].message.content
     data = json.loads(raw_reply)
 
-    # Force intensity to be a real number, since the AI sometimes returns it as text (e.g. "75" instead of 75)
     try:
         intensity = int(data.get("intensity", 0))
     except (ValueError, TypeError):
         intensity = 0
 
+    emotion = data.get("emotion", "neutral")
+    reply = data.get("reply", "I'm here for you.")
+
+    # Save BOTH the user's message and Buddy's reply to the database, permanently
+    save_message("user", request.message, emotion, intensity)
+    save_message("assistant", reply, emotion, intensity)
+
     return {
-        "reply": data.get("reply", "I'm here for you."),
-        "emotion": data.get("emotion", "neutral"),
+        "reply": reply,
+        "emotion": emotion,
         "intensity": intensity,
         "needs_support": intensity >= HIGH_INTENSITY_THRESHOLD,
         "detected_mode": data.get("detected_mode", "support"),
     }
 
-# ---------- NEW: Voice analysis endpoint (tone + transcription) ----------
+# ---------- NEW: Get all saved chat history ----------
+@app.get("/history")
+def get_history():
+    return {"messages": load_all_messages()}
+
+# ---------- NEW: Clear all chat history (start fresh) ----------
+@app.delete("/history")
+def delete_history():
+    clear_all_messages()
+    return {"status": "History cleared"}
+
+# ---------- Voice analysis endpoint (tone + transcription) ----------
 @app.post("/analyze-voice")
 async def analyze_voice(audio: UploadFile = File(...)):
-    # Save the uploaded audio to a temporary file so Librosa + Whisper can read it
     with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as tmp:
         contents = await audio.read()
         tmp.write(contents)
         tmp_path = tmp.name
 
     try:
-        # ---- Part 1: Transcribe the actual words using Groq's Whisper model ----
         transcript_text = ""
         try:
             with open(tmp_path, "rb") as audio_file:
@@ -142,7 +217,6 @@ async def analyze_voice(audio: UploadFile = File(...)):
             print("Transcription failed:", transcribe_error)
             transcript_text = ""
 
-        # ---- Part 2: Analyze tone using Librosa (pitch, energy, pace) ----
         y, sr = librosa.load(tmp_path)
 
         pitches, magnitudes = librosa.piptrack(y=y, sr=sr)
@@ -176,7 +250,7 @@ async def analyze_voice(audio: UploadFile = File(...)):
 
         return {
             "voice_tone": tone_description,
-            "transcript": transcript_text,  # the user's actual words, now included
+            "transcript": transcript_text,
             "raw": {
                 "avg_pitch": round(avg_pitch, 2),
                 "avg_energy": round(avg_energy, 4),
