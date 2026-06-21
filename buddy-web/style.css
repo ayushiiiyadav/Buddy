@@ -214,6 +214,48 @@ body {
   color: white;
 }
 
+/* ---------- Voice recording ---------- */
+.mic-btn {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(58, 53, 72, 0.12);
+  background: #FFFFFF;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.mic-btn:hover {
+  border-color: var(--accent);
+}
+
+.mic-btn-active {
+  background: #E25C5C;
+  border-color: #E25C5C;
+  animation: pulse 1.2s infinite;
+}
+
+@keyframes pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(226, 92, 92, 0.5); }
+  70%  { box-shadow: 0 0 0 8px rgba(226, 92, 92, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(226, 92, 92, 0); }
+}
+
+.voice-tone-preview {
+  margin: 0 16px 10px;
+  padding: 8px 12px;
+  background: var(--calm-bg);
+  color: var(--accent-deep);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  text-align: center;
+}
+
 /* ---------- Input row ---------- */
 .input-row {
   display: flex;
