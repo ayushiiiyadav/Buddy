@@ -85,11 +85,54 @@ function ModeToggle({ mode, setMode }) {
   );
 }
 
+// The sidebar — lists all past conversations, like ChatGPT's history panel
+function Sidebar({ isOpen, conversationList, activeId, onSelect, onDelete, onNewChat, onClose }) {
+  return e(
+    "div",
+    { className: "sidebar-overlay" + (isOpen ? " sidebar-overlay-visible" : "") },
+    e(
+      "div",
+      {
+        className: "sidebar" + (isOpen ? " sidebar-open" : ""),
+        onClick: (ev) => ev.stopPropagation(), // clicking inside the sidebar shouldn't close it
+      },
+      e("button", { className: "new-chat-btn", onClick: onNewChat }, "+ New Chat"),
+      e(
+        "div",
+        { className: "sidebar-list" },
+        conversationList.length === 0
+          ? e("p", { className: "sidebar-empty" }, "No past conversations yet")
+          : conversationList.map((conv) =>
+              e(
+                "div",
+                {
+                  key: conv.id,
+                  className: "sidebar-item" + (conv.id === activeId ? " sidebar-item-active" : ""),
+                  onClick: () => onSelect(conv.id),
+                },
+                e("span", { className: "sidebar-item-title" }, conv.title),
+                e(
+                  "button",
+                  { className: "sidebar-delete-btn", onClick: (ev) => onDelete(conv.id, ev), title: "Delete" },
+                  "✕"
+                )
+              )
+            )
+      )
+    ),
+    // clicking the dark overlay (outside the sidebar) closes it
+    e("div", { className: "sidebar-click-catcher", onClick: onClose })
+  );
+}
+
 function App() {
   const [messages, setMessages] = React.useState([
     { sender: "buddy", text: "Hey! How are you feeling today? 💙" },
   ]);
-  const [isLoadingHistory, setIsLoadingHistory] = React.useState(true);
+  const [conversationId, setConversationId] = React.useState(null); // null = new, unsaved chat
+  const conversationIdRef = React.useRef(null); // mirrors conversationId, but updates instantly (no React delay)
+  const [conversationList, setConversationList] = React.useState([]);
+  const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
   const [input, setInput] = React.useState("");
   const [isTyping, setIsTyping] = React.useState(false);
   const [emotion, setEmotion] = React.useState(null);
@@ -100,52 +143,77 @@ function App() {
 
   // ---- Voice recording state ----
   const [isRecording, setIsRecording] = React.useState(false);
-  const [voiceTone, setVoiceTone] = React.useState(null); // human-readable tone description
+  const [voiceTone, setVoiceTone] = React.useState(null);
   const [isAnalyzingVoice, setIsAnalyzingVoice] = React.useState(false);
   const mediaRecorderRef = React.useRef(null);
   const audioChunksRef = React.useRef([]);
 
-  // ---- Load saved chat history once, when the app first opens ----
+  // ---- Load the list of past conversations once, when the app first opens ----
   React.useEffect(() => {
-    async function loadHistory() {
-      try {
-        const response = await fetch("http://localhost:8000/history");
-        const data = await response.json();
+    refreshConversationList();
+  }, []);
 
-        if (data.messages && data.messages.length > 0) {
-          const restored = data.messages.map((msg) => ({
-            sender: msg.role === "assistant" ? "buddy" : "user",
-            text: msg.content,
-          }));
-          setMessages(restored);
-
-          // Restore the most recent emotion/intensity reading too, if available
-          const last = data.messages[data.messages.length - 1];
-          if (last.emotion) setEmotion(last.emotion);
-          if (last.intensity != null) setIntensity(last.intensity);
-        }
-      } catch (err) {
-        console.error("Could not load chat history:", err);
-      } finally {
-        setIsLoadingHistory(false);
-      }
+  async function refreshConversationList() {
+    try {
+      const response = await fetch("http://localhost:8000/conversations");
+      const data = await response.json();
+      setConversationList(data.conversations || []);
+    } catch (err) {
+      console.error("Could not load conversation list:", err);
     }
-    loadHistory();
-  }, []); // empty array = runs once, only when the app first loads
+  }
 
-  // ---- Clear all saved history ----
-  async function clearHistory() {
-    const confirmed = window.confirm("This will permanently delete all your chat history with Buddy. Continue?");
+  // ---- Open a specific past conversation ----
+  async function openConversation(id) {
+    try {
+      const response = await fetch(`http://localhost:8000/conversations/${id}/messages`);
+      const data = await response.json();
+
+      const restored = data.messages.map((msg) => ({
+        sender: msg.role === "assistant" ? "buddy" : "user",
+        text: msg.content,
+      }));
+
+      setMessages(restored.length > 0 ? restored : [{ sender: "buddy", text: "Hey! How are you feeling today? 💙" }]);
+      setConversationId(id);
+      conversationIdRef.current = id; // keep the ref in sync immediately
+      setIsSidebarOpen(false);
+
+      const last = data.messages[data.messages.length - 1];
+      if (last) {
+        setEmotion(last.emotion);
+        setIntensity(last.intensity || 0);
+      }
+    } catch (err) {
+      console.error("Could not open conversation:", err);
+    }
+  }
+
+  // ---- Start a brand new chat ----
+  function startNewChat() {
+    setMessages([{ sender: "buddy", text: "Hey! How are you feeling today? 💙" }]);
+    setConversationId(null);
+    conversationIdRef.current = null; // reset the ref immediately too
+    setEmotion(null);
+    setIntensity(0);
+    setNeedsSupport(false);
+    setIsSidebarOpen(false);
+  }
+
+  // ---- Delete a past conversation ----
+  async function deleteConversation(id, event) {
+    event.stopPropagation(); // don't trigger openConversation when clicking delete
+    const confirmed = window.confirm("Delete this conversation permanently?");
     if (!confirmed) return;
 
     try {
-      await fetch("http://localhost:8000/history", { method: "DELETE" });
-      setMessages([{ sender: "buddy", text: "Hey! How are you feeling today? 💙" }]);
-      setEmotion(null);
-      setIntensity(0);
-      setNeedsSupport(false);
+      await fetch(`http://localhost:8000/conversations/${id}`, { method: "DELETE" });
+      await refreshConversationList();
+      if (conversationId === id) {
+        startNewChat();
+      }
     } catch (err) {
-      console.error("Could not clear history:", err);
+      console.error("Could not delete conversation:", err);
     }
   }
 
@@ -242,6 +310,12 @@ function App() {
       setNeedsSupport(data.needs_support);
       setDetectedMode(data.detected_mode);
       setVoiceTone(null);
+
+      if (conversationIdRef.current === null && data.conversation_id) {
+        setConversationId(data.conversation_id);
+        conversationIdRef.current = data.conversation_id;
+        refreshConversationList();
+      }
     } catch (error) {
       setMessages((prev) => [
         ...prev,
@@ -261,7 +335,8 @@ function App() {
         message: userMessage,
         history: history,
         mode: selectedMode,
-        voice_tone: tone, // include detected voice tone, if any
+        voice_tone: tone,
+        conversation_id: conversationIdRef.current, // read from the ref — always up to date, no React delay
       }),
     });
 
@@ -274,7 +349,7 @@ function App() {
 
     const userMessage = input;
     const historyToSend = buildHistory(messages);
-    const toneToSend = voiceTone; // use whatever tone was last detected
+    const toneToSend = voiceTone;
 
     const newMessages = [...messages, { sender: "user", text: userMessage }];
     setMessages(newMessages);
@@ -288,7 +363,16 @@ function App() {
       setIntensity(data.intensity);
       setNeedsSupport(data.needs_support);
       setDetectedMode(data.detected_mode);
-      setVoiceTone(null); // clear it after use, so it doesn't carry over to unrelated future messages
+      setVoiceTone(null);
+
+      // If this was the first message of a new chat, we now have a real conversation_id —
+      // remember it (both state AND ref, so the very next message uses it correctly),
+      // and refresh the sidebar list so the new chat shows up
+      if (conversationIdRef.current === null && data.conversation_id) {
+        setConversationId(data.conversation_id);
+        conversationIdRef.current = data.conversation_id;
+        refreshConversationList();
+      }
     } catch (error) {
       setMessages((prev) => [
         ...prev,
@@ -335,40 +419,56 @@ function App() {
 
   return e(
     "div",
-    { className: "chat-screen" },
+    { className: "app-wrapper" },
+    e(Sidebar, {
+      isOpen: isSidebarOpen,
+      conversationList: conversationList,
+      activeId: conversationId,
+      onSelect: openConversation,
+      onDelete: deleteConversation,
+      onNewChat: startNewChat,
+      onClose: () => setIsSidebarOpen(false),
+    }),
     e(
       "div",
-      { className: "header-row" },
-      e("h1", { className: "title" }, "Buddy"),
-      e("button", { className: "clear-btn", onClick: clearHistory, title: "Clear chat history" }, "🗑️")
-    ),
-    e(ModeToggle, { mode, setMode }),
-    emotionBadge,
-    isLoadingHistory
-      ? e("p", { className: "loading-text" }, "Loading your past conversations...")
-      : e("div", { className: "chat-window" }, chatBubbles),
-    needsSupport ? e(CalmingToolkit) : null,
-    voiceTonePreview,
-    e(
-      "div",
-      { className: "input-row" },
+      { className: "chat-screen" },
       e(
-        "button",
-        {
-          className: "mic-btn" + (isRecording ? " mic-btn-active" : ""),
-          onClick: isRecording ? stopRecording : startRecording,
-          title: isRecording ? "Stop recording" : "Record your voice",
-        },
-        isRecording ? "⏹️" : "🎙️"
+        "div",
+        { className: "header-row" },
+        e(
+          "button",
+          { className: "menu-btn", onClick: () => setIsSidebarOpen(true), title: "Past conversations" },
+          "☰"
+        ),
+        e("h1", { className: "title" }, "Buddy"),
+        e("button", { className: "clear-btn", onClick: startNewChat, title: "New chat" }, "✚")
       ),
-      e("input", {
-        className: "chat-input",
-        placeholder: "Type a message...",
-        value: input,
-        onChange: (ev) => setInput(ev.target.value),
-        onKeyDown: (ev) => ev.key === "Enter" && sendMessage(),
-      }),
-      e("button", { className: "send-btn", onClick: sendMessage }, "Send")
+      e(ModeToggle, { mode, setMode }),
+      emotionBadge,
+      e("div", { className: "chat-window" }, chatBubbles),
+      needsSupport ? e(CalmingToolkit) : null,
+      voiceTonePreview,
+      e(
+        "div",
+        { className: "input-row" },
+        e(
+          "button",
+          {
+            className: "mic-btn" + (isRecording ? " mic-btn-active" : ""),
+            onClick: isRecording ? stopRecording : startRecording,
+            title: isRecording ? "Stop recording" : "Record your voice",
+          },
+          isRecording ? "⏹️" : "🎙️"
+        ),
+        e("input", {
+          className: "chat-input",
+          placeholder: "Type a message...",
+          value: input,
+          onChange: (ev) => setInput(ev.target.value),
+          onKeyDown: (ev) => ev.key === "Enter" && sendMessage(),
+        }),
+        e("button", { className: "send-btn", onClick: sendMessage }, "Send")
+      )
     )
   );
 }

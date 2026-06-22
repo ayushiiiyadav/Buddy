@@ -9,3 +9,7 @@ venv/
 # OS junk files
 .DS_Store
 Thumbs.db
+
+# Personal data and dev-only tools — not needed by anyone else running this project
+buddy.db
+clear_all_chats.py

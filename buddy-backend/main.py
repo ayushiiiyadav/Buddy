@@ -33,60 +33,93 @@ app.add_middleware(
 )
 
 # ---------- Database setup ----------
-# This creates a file called "buddy.db" right inside buddy-backend/ the first time it runs.
-# SQLite is built into Python — no extra installs needed, no separate server to run.
+# Now supports MULTIPLE separate conversations, like ChatGPT's sidebar —
+# each conversation has its own id, title, and list of messages.
 DB_PATH = os.path.join(os.path.dirname(__file__), "buddy.db")
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("""
+        CREATE TABLE IF NOT EXISTS conversations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+    """)
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            conversation_id INTEGER NOT NULL,
             role TEXT NOT NULL,
             content TEXT NOT NULL,
             emotion TEXT,
             intensity INTEGER,
-            timestamp TEXT NOT NULL
+            timestamp TEXT NOT NULL,
+            FOREIGN KEY (conversation_id) REFERENCES conversations (id)
         )
     """)
     conn.commit()
     conn.close()
 
-init_db()  # runs once when the server starts, creates the table if it doesn't exist yet
+init_db()
 
-def save_message(role, content, emotion=None, intensity=None):
+def create_conversation(title):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO messages (role, content, emotion, intensity, timestamp) VALUES (?, ?, ?, ?, ?)",
-        (role, content, emotion, intensity, datetime.now().isoformat()),
+        "INSERT INTO conversations (title, created_at) VALUES (?, ?)",
+        (title, datetime.now().isoformat()),
+    )
+    conn.commit()
+    new_id = cursor.lastrowid
+    conn.close()
+    return new_id
+
+def save_message(conversation_id, role, content, emotion=None, intensity=None):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO messages (conversation_id, role, content, emotion, intensity, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+        (conversation_id, role, content, emotion, intensity, datetime.now().isoformat()),
     )
     conn.commit()
     conn.close()
 
-def load_all_messages():
+def load_conversation_list():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("SELECT role, content, emotion, intensity, timestamp FROM messages ORDER BY id ASC")
+    cursor.execute("SELECT id, title, created_at FROM conversations ORDER BY id DESC")
     rows = cursor.fetchall()
     conn.close()
+    return [{"id": row[0], "title": row[1], "created_at": row[2]} for row in rows]
 
+def load_conversation_messages(conversation_id):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT role, content, emotion, intensity, timestamp FROM messages WHERE conversation_id = ? ORDER BY id ASC",
+        (conversation_id,),
+    )
+    rows = cursor.fetchall()
+    conn.close()
     return [
-        {
-            "role": row[0],
-            "content": row[1],
-            "emotion": row[2],
-            "intensity": row[3],
-            "timestamp": row[4],
-        }
+        {"role": row[0], "content": row[1], "emotion": row[2], "intensity": row[3], "timestamp": row[4]}
         for row in rows
     ]
 
-def clear_all_messages():
+def delete_conversation(conversation_id):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM messages")
+    cursor.execute("DELETE FROM messages WHERE conversation_id = ?", (conversation_id,))
+    cursor.execute("DELETE FROM conversations WHERE id = ?", (conversation_id,))
+    conn.commit()
+    conn.close()
+
+def update_conversation_title(conversation_id, title):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE conversations SET title = ? WHERE id = ?", (title, conversation_id))
     conn.commit()
     conn.close()
 
@@ -100,6 +133,7 @@ class ChatRequest(BaseModel):
     history: List[HistoryMessage] = []
     mode: Optional[str] = "auto"
     voice_tone: Optional[str] = None
+    conversation_id: Optional[int] = None  # which conversation this message belongs to
 
 BUDDY_SYSTEM_PROMPT = """
 You are Buddy — a warm, caring best friend AND a study companion.
@@ -173,9 +207,15 @@ def chat(request: ChatRequest):
     emotion = data.get("emotion", "neutral")
     reply = data.get("reply", "I'm here for you.")
 
-    # Save BOTH the user's message and Buddy's reply to the database, permanently
-    save_message("user", request.message, emotion, intensity)
-    save_message("assistant", reply, emotion, intensity)
+    # If no conversation exists yet, create one now — title it using the user's first message
+    conversation_id = request.conversation_id
+    if conversation_id is None:
+        title = request.message[:40] + ("..." if len(request.message) > 40 else "")
+        conversation_id = create_conversation(title)
+
+    # Save BOTH the user's message and Buddy's reply to this specific conversation
+    save_message(conversation_id, "user", request.message, emotion, intensity)
+    save_message(conversation_id, "assistant", reply, emotion, intensity)
 
     return {
         "reply": reply,
@@ -183,18 +223,24 @@ def chat(request: ChatRequest):
         "intensity": intensity,
         "needs_support": intensity >= HIGH_INTENSITY_THRESHOLD,
         "detected_mode": data.get("detected_mode", "support"),
+        "conversation_id": conversation_id,  # send back so the frontend knows which chat this belongs to
     }
 
-# ---------- NEW: Get all saved chat history ----------
-@app.get("/history")
-def get_history():
-    return {"messages": load_all_messages()}
+# ---------- NEW: List all past conversations (for the sidebar) ----------
+@app.get("/conversations")
+def get_conversations():
+    return {"conversations": load_conversation_list()}
 
-# ---------- NEW: Clear all chat history (start fresh) ----------
-@app.delete("/history")
-def delete_history():
-    clear_all_messages()
-    return {"status": "History cleared"}
+# ---------- NEW: Get messages for one specific conversation ----------
+@app.get("/conversations/{conversation_id}/messages")
+def get_conversation_messages(conversation_id: int):
+    return {"messages": load_conversation_messages(conversation_id)}
+
+# ---------- NEW: Delete a specific conversation ----------
+@app.delete("/conversations/{conversation_id}")
+def remove_conversation(conversation_id: int):
+    delete_conversation(conversation_id)
+    return {"status": "Conversation deleted"}
 
 # ---------- Voice analysis endpoint (tone + transcription) ----------
 @app.post("/analyze-voice")
