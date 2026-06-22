@@ -127,6 +127,7 @@ body {
   inset: 0;
   background: rgba(58, 53, 72, 0);
   transition: background 0.2s ease;
+  z-index: 1; /* sits below the actual sidebar panel */
 }
 
 .sidebar-overlay-visible .sidebar-click-catcher {
@@ -146,6 +147,7 @@ body {
   display: flex;
   flex-direction: column;
   padding: 16px 14px;
+  z-index: 2; /* sits above the click-catcher, so clicks inside the sidebar work correctly */
 }
 
 .sidebar-open {
@@ -218,14 +220,16 @@ body {
   color: var(--ink-soft);
   font-size: 11px;
   cursor: pointer;
-  opacity: 0;
+  opacity: 0.45;
   padding: 4px 6px;
   flex-shrink: 0;
   transition: opacity 0.15s ease;
+  position: relative;
+  z-index: 5;
 }
 
 .sidebar-item:hover .sidebar-delete-btn {
-  opacity: 0.6;
+  opacity: 0.8;
 }
 
 .sidebar-delete-btn:hover {

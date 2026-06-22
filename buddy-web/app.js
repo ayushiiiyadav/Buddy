@@ -113,7 +113,14 @@ function Sidebar({ isOpen, conversationList, activeId, onSelect, onDelete, onNew
                 e("span", { className: "sidebar-item-title" }, conv.title),
                 e(
                   "button",
-                  { className: "sidebar-delete-btn", onClick: (ev) => onDelete(conv.id, ev), title: "Delete" },
+                  {
+                    className: "sidebar-delete-btn",
+                    onClick: (ev) => {
+                      ev.stopPropagation(); // stop this click from also triggering the parent's onSelect
+                      onDelete(conv.id, ev);
+                    },
+                    title: "Delete",
+                  },
                   "✕"
                 )
               )
