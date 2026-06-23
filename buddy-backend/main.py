@@ -94,6 +94,16 @@ def load_conversation_list():
     conn.close()
     return [{"id": row[0], "title": row[1], "created_at": row[2]} for row in rows]
 
+def load_all_user_messages():
+    # Pulls every message the USER has ever sent, across ALL conversations —
+    # this is the raw material for the personality insight feature.
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT content FROM messages WHERE role = 'user' ORDER BY id ASC")
+    rows = cursor.fetchall()
+    conn.close()
+    return [row[0] for row in rows]
+
 def load_conversation_messages(conversation_id):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -230,6 +240,64 @@ def chat(request: ChatRequest):
 @app.get("/conversations")
 def get_conversations():
     return {"conversations": load_conversation_list()}
+
+# ---------- NEW: Personality insight — analyzes everything the user has ever said ----------
+PERSONALITY_PROMPT = """
+You are an insightful, warm observer analyzing someone's messages to a companion app
+over time, to reflect their personality back to them — like a thoughtful friend who has
+been paying close attention.
+
+Based on everything this person has said, identify real patterns: how they communicate,
+what they care about, recurring emotional themes, strengths, and areas they might want to
+grow in. Be specific and grounded in what they actually said — avoid generic horoscope-like
+statements that could apply to anyone.
+
+Be kind but honest. Growth areas should be framed gently and constructively, never harshly.
+If there isn't much to go on yet, say so honestly rather than inventing traits.
+
+Respond ONLY with valid JSON in exactly this format, nothing else:
+
+{
+  "summary": "a warm 2-3 sentence overview of who this person seems to be",
+  "strengths": ["3-5 specific strength traits, each as a short phrase"],
+  "growth_areas": ["2-4 specific, gently-framed growth areas, each as a short phrase"],
+  "recurring_themes": ["2-4 topics or concerns that come up repeatedly for this person"]
+}
+"""
+
+@app.get("/personality-insight")
+def personality_insight():
+    user_messages = load_all_user_messages()
+
+    if len(user_messages) < 5:
+        return {
+            "summary": "We need a few more conversations together before I can reflect on your personality meaningfully. Keep chatting with me, and check back soon!",
+            "strengths": [],
+            "growth_areas": [],
+            "recurring_themes": [],
+        }
+
+    # Combine all messages into one big block of text for analysis
+    all_messages_text = "\n".join(f"- {msg}" for msg in user_messages)
+
+    response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[
+            {"role": "system", "content": PERSONALITY_PROMPT},
+            {"role": "user", "content": f"Here are all the messages this person has sent over time:\n\n{all_messages_text}"},
+        ],
+        response_format={"type": "json_object"},
+    )
+
+    raw_reply = response.choices[0].message.content
+    data = json.loads(raw_reply)
+
+    return {
+        "summary": data.get("summary", "I don't have enough to go on yet."),
+        "strengths": data.get("strengths", []),
+        "growth_areas": data.get("growth_areas", []),
+        "recurring_themes": data.get("recurring_themes", []),
+    }
 
 # ---------- NEW: Get messages for one specific conversation ----------
 @app.get("/conversations/{conversation_id}/messages")

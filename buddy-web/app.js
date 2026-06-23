@@ -49,7 +49,7 @@ function CalmingToolkit() {
   return e(
     "div",
     { className: "calming-toolkit" },
-    e("p", { className: "calming-title" }, "This sounds really tough. Let's slow down together 💙"),
+    e("p", { className: "calming-title" }, "This sounds really tough. Let's slow down together 💛"),
     e(BreathingExercise),
     e(
       "div",
@@ -64,7 +64,7 @@ function CalmingToolkit() {
 function ModeToggle({ mode, setMode }) {
   const options = [
     { key: "auto", label: "Auto" },
-    { key: "support", label: "💙 Support" },
+    { key: "support", label: "💛 Support" },
     { key: "study", label: "📚 Study" },
   ];
 
@@ -86,6 +86,66 @@ function ModeToggle({ mode, setMode }) {
 }
 
 // The sidebar — lists all past conversations, like ChatGPT's history panel
+// The personality insight panel — reflects patterns from everything the user has said
+function PersonalityPanel({ isOpen, isLoading, data, onClose }) {
+  const renderList = (items, className) =>
+    items && items.length > 0
+      ? e(
+          "ul",
+          { className: "personality-list" },
+          items.map((item, i) => e("li", { key: i, className: className }, item))
+        )
+      : null;
+
+  return e(
+    "div",
+    { className: "personality-overlay" + (isOpen ? " personality-overlay-visible" : "") },
+    e("div", { className: "personality-click-catcher", onClick: onClose }),
+    e(
+      "div",
+      {
+        className: "personality-panel" + (isOpen ? " personality-panel-open" : ""),
+        onClick: (ev) => ev.stopPropagation(),
+      },
+      e(
+        "div",
+        { className: "personality-header" },
+        e("span", { className: "personality-header-title" }, "🧠 Your Personality Reflection"),
+        e("button", { className: "personality-close-btn", onClick: onClose }, "✕")
+      ),
+      isLoading
+        ? e("p", { className: "personality-loading" }, "Reflecting on everything we've talked about...")
+        : data &&
+          e(
+            "div",
+            { className: "personality-content" },
+            e("p", { className: "personality-summary" }, data.summary),
+            data.strengths && data.strengths.length > 0 &&
+              e(
+                "div",
+                { className: "personality-section" },
+                e("h3", { className: "personality-section-title" }, "✨ Strengths"),
+                renderList(data.strengths, "personality-strength-item")
+              ),
+            data.growth_areas && data.growth_areas.length > 0 &&
+              e(
+                "div",
+                { className: "personality-section" },
+                e("h3", { className: "personality-section-title" }, "🌱 Growth areas"),
+                renderList(data.growth_areas, "personality-growth-item")
+              ),
+            data.recurring_themes && data.recurring_themes.length > 0 &&
+              e(
+                "div",
+                { className: "personality-section" },
+                e("h3", { className: "personality-section-title" }, "🔁 Recurring themes"),
+                renderList(data.recurring_themes, "personality-theme-item")
+              )
+          )
+    )
+  );
+}
+
 function Sidebar({ isOpen, conversationList, activeId, onSelect, onDelete, onNewChat, onClose }) {
   return e(
     "div",
@@ -134,12 +194,15 @@ function Sidebar({ isOpen, conversationList, activeId, onSelect, onDelete, onNew
 
 function App() {
   const [messages, setMessages] = React.useState([
-    { sender: "buddy", text: "Hey! How are you feeling today? 💙" },
+    { sender: "buddy", text: "Hey! How are you feeling today? 💛" },
   ]);
   const [conversationId, setConversationId] = React.useState(null); // null = new, unsaved chat
   const conversationIdRef = React.useRef(null); // mirrors conversationId, but updates instantly (no React delay)
   const [conversationList, setConversationList] = React.useState([]);
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
+  const [isPersonalityOpen, setIsPersonalityOpen] = React.useState(false);
+  const [personalityData, setPersonalityData] = React.useState(null);
+  const [isLoadingPersonality, setIsLoadingPersonality] = React.useState(false);
   const [input, setInput] = React.useState("");
   const [isTyping, setIsTyping] = React.useState(false);
   const [emotion, setEmotion] = React.useState(null);
@@ -170,6 +233,27 @@ function App() {
     }
   }
 
+  // ---- Fetch a fresh personality insight, looking at every conversation ever had ----
+  async function openPersonalityPanel() {
+    setIsPersonalityOpen(true);
+    setIsLoadingPersonality(true);
+    try {
+      const response = await fetch("http://localhost:8000/personality-insight");
+      const data = await response.json();
+      setPersonalityData(data);
+    } catch (err) {
+      console.error("Could not load personality insight:", err);
+      setPersonalityData({
+        summary: "Hmm, I couldn't reach my brain (backend). Is it running?",
+        strengths: [],
+        growth_areas: [],
+        recurring_themes: [],
+      });
+    } finally {
+      setIsLoadingPersonality(false);
+    }
+  }
+
   // ---- Open a specific past conversation ----
   async function openConversation(id) {
     try {
@@ -181,7 +265,7 @@ function App() {
         text: msg.content,
       }));
 
-      setMessages(restored.length > 0 ? restored : [{ sender: "buddy", text: "Hey! How are you feeling today? 💙" }]);
+      setMessages(restored.length > 0 ? restored : [{ sender: "buddy", text: "Hey! How are you feeling today? 💛" }]);
       setConversationId(id);
       conversationIdRef.current = id; // keep the ref in sync immediately
       setIsSidebarOpen(false);
@@ -198,7 +282,7 @@ function App() {
 
   // ---- Start a brand new chat ----
   function startNewChat() {
-    setMessages([{ sender: "buddy", text: "Hey! How are you feeling today? 💙" }]);
+    setMessages([{ sender: "buddy", text: "Hey! How are you feeling today? 💛" }]);
     setConversationId(null);
     conversationIdRef.current = null; // reset the ref immediately too
     setEmotion(null);
@@ -413,7 +497,7 @@ function App() {
         "div",
         { className: "emotion-badge" },
         `Detected: ${emotion} (intensity: ${intensity}/100)` +
-          (detectedMode ? ` · ${detectedMode === "study" ? "📚 Study mode" : "💙 Support mode"}` : "")
+          (detectedMode ? ` · ${detectedMode === "study" ? "📚 Study mode" : "💛 Support mode"}` : "")
       )
     : null;
 
@@ -436,6 +520,12 @@ function App() {
       onNewChat: startNewChat,
       onClose: () => setIsSidebarOpen(false),
     }),
+    e(PersonalityPanel, {
+      isOpen: isPersonalityOpen,
+      isLoading: isLoadingPersonality,
+      data: personalityData,
+      onClose: () => setIsPersonalityOpen(false),
+    }),
     e(
       "div",
       { className: "chat-screen" },
@@ -448,7 +538,16 @@ function App() {
           "☰"
         ),
         e("h1", { className: "title" }, "Buddy"),
-        e("button", { className: "clear-btn", onClick: startNewChat, title: "New chat" }, "✚")
+        e(
+          "div",
+          { className: "header-right-group" },
+          e(
+            "button",
+            { className: "personality-btn", onClick: openPersonalityPanel, title: "Your personality reflection" },
+            "🧠"
+          ),
+          e("button", { className: "clear-btn", onClick: startNewChat, title: "New chat" }, "✚")
+        )
       ),
       e(ModeToggle, { mode, setMode }),
       emotionBadge,
@@ -482,3 +581,29 @@ function App() {
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(e(App));
+
+// ---- Subtle 3D tilt on mouse move (restrained — a few degrees max) ----
+// Respects prefers-reduced-motion automatically since it's a small, optional touch.
+const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+if (!prefersReducedMotion) {
+  document.addEventListener("mousemove", (ev) => {
+    const card = document.querySelector(".chat-screen");
+    if (!card) return;
+
+    const rect = card.getBoundingClientRect();
+    const cardCenterX = rect.left + rect.width / 2;
+    const cardCenterY = rect.top + rect.height / 2;
+
+    // how far the mouse is from the card's center, as a fraction of the screen
+    const offsetX = (ev.clientX - cardCenterX) / window.innerWidth;
+    const offsetY = (ev.clientY - cardCenterY) / window.innerHeight;
+
+    // very small max tilt — a few degrees, just enough to feel alive, not gimmicky
+    const maxTilt = 2.5;
+    const tiltX = (-offsetY * maxTilt).toFixed(2);
+    const tiltY = (offsetX * maxTilt).toFixed(2);
+
+    card.style.transform = `rotateX(${tiltX}deg) rotateY(${tiltY}deg)`;
+  });
+}
