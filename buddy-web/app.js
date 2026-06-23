@@ -45,12 +45,12 @@ function BreathingExercise() {
   );
 }
 
-function CalmingToolkit() {
+function CalmingToolkit({ showBreathing }) {
   return e(
     "div",
     { className: "calming-toolkit" },
     e("p", { className: "calming-title" }, "This sounds really tough. Let's slow down together 💛"),
-    e(BreathingExercise),
+    showBreathing ? e(BreathingExercise) : null,
     e(
       "div",
       { className: "calming-tips" },
@@ -208,6 +208,7 @@ function App() {
   const [emotion, setEmotion] = React.useState(null);
   const [intensity, setIntensity] = React.useState(0);
   const [needsSupport, setNeedsSupport] = React.useState(false);
+  const [needsBreathing, setNeedsBreathing] = React.useState(false);
   const [mode, setMode] = React.useState("auto");
   const [detectedMode, setDetectedMode] = React.useState(null);
 
@@ -288,6 +289,7 @@ function App() {
     setEmotion(null);
     setIntensity(0);
     setNeedsSupport(false);
+    setNeedsBreathing(false);
     setIsSidebarOpen(false);
   }
 
@@ -399,6 +401,7 @@ function App() {
       setEmotion(data.emotion);
       setIntensity(data.intensity);
       setNeedsSupport(data.needs_support);
+      setNeedsBreathing(data.needs_breathing);
       setDetectedMode(data.detected_mode);
       setVoiceTone(null);
 
@@ -453,6 +456,7 @@ function App() {
       setEmotion(data.emotion);
       setIntensity(data.intensity);
       setNeedsSupport(data.needs_support);
+      setNeedsBreathing(data.needs_breathing);
       setDetectedMode(data.detected_mode);
       setVoiceTone(null);
 
@@ -552,7 +556,7 @@ function App() {
       e(ModeToggle, { mode, setMode }),
       emotionBadge,
       e("div", { className: "chat-window" }, chatBubbles),
-      needsSupport ? e(CalmingToolkit) : null,
+      needsSupport ? e(CalmingToolkit, { showBreathing: needsBreathing }) : null,
       voiceTonePreview,
       e(
         "div",

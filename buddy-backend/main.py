@@ -183,6 +183,10 @@ If intensity is high, prioritize emotional support over academic help regardless
 
 HIGH_INTENSITY_THRESHOLD = 70
 
+# The breathing exercise is more specific — only for anxious/breathless feelings at very high intensity
+BREATHING_INTENSITY_THRESHOLD = 90
+ANXIETY_RELATED_EMOTIONS = {"anxious", "panicked", "breathless", "overwhelmed", "scared", "fearful", "nervous"}
+
 @app.post("/chat")
 def chat(request: ChatRequest):
     messages = [{"role": "system", "content": BUDDY_SYSTEM_PROMPT}]
@@ -227,11 +231,16 @@ def chat(request: ChatRequest):
     save_message(conversation_id, "user", request.message, emotion, intensity)
     save_message(conversation_id, "assistant", reply, emotion, intensity)
 
+    # The breathing exercise only shows for anxiety/breathlessness specifically, and only at 90+ intensity
+    emotion_lower = emotion.lower().strip()
+    needs_breathing = intensity >= BREATHING_INTENSITY_THRESHOLD and emotion_lower in ANXIETY_RELATED_EMOTIONS
+
     return {
         "reply": reply,
         "emotion": emotion,
         "intensity": intensity,
         "needs_support": intensity >= HIGH_INTENSITY_THRESHOLD,
+        "needs_breathing": needs_breathing,
         "detected_mode": data.get("detected_mode", "support"),
         "conversation_id": conversation_id,  # send back so the frontend knows which chat this belongs to
     }
