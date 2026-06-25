@@ -218,11 +218,19 @@ function App() {
   const [isAnalyzingVoice, setIsAnalyzingVoice] = React.useState(false);
   const mediaRecorderRef = React.useRef(null);
   const audioChunksRef = React.useRef([]);
+  const chatBottomRef = React.useRef(null); // ← auto-scroll anchor
 
   // ---- Load the list of past conversations once, when the app first opens ----
   React.useEffect(() => {
     refreshConversationList();
   }, []);
+
+  // ---- Auto-scroll to bottom whenever messages change or Buddy starts typing ----
+  React.useEffect(() => {
+    if (chatBottomRef.current) {
+      chatBottomRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages, isTyping]);
 
   async function refreshConversationList() {
     try {
@@ -555,7 +563,13 @@ function App() {
       ),
       e(ModeToggle, { mode, setMode }),
       emotionBadge,
-      e("div", { className: "chat-window" }, chatBubbles),
+      // Chat window with invisible scroll anchor at the bottom
+      e(
+        "div",
+        { className: "chat-window" },
+        chatBubbles,
+        e("div", { ref: chatBottomRef }) // ← invisible anchor — always stays at the bottom
+      ),
       needsSupport ? e(CalmingToolkit, { showBreathing: needsBreathing }) : null,
       voiceTonePreview,
       e(
