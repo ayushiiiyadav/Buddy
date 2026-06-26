@@ -1,7 +1,81 @@
 // NOTE: This file uses React.createElement instead of JSX (no Babel needed).
-// Now includes voice recording + tone analysis.
+// Now includes voice recording + tone analysis + live waveform visualizer.
 
 const e = React.createElement;
+
+// ---- Waveform visualizer ----
+// Draws a live oscilloscope-style wave while recording, flatlines when stopped.
+function WaveformVisualizer({ isRecording, analyserRef }) {
+  const canvasRef = React.useRef(null);
+  const animFrameRef = React.useRef(null);
+
+  React.useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const W = canvas.width;
+    const H = canvas.height;
+
+    function drawFlatline() {
+      ctx.clearRect(0, 0, W, H);
+      ctx.beginPath();
+      ctx.strokeStyle = "#a0aec0";
+      ctx.lineWidth = 2;
+      ctx.moveTo(0, H / 2);
+      ctx.lineTo(W, H / 2);
+      ctx.stroke();
+    }
+
+    function drawWave() {
+      if (!analyserRef.current) { drawFlatline(); return; }
+      const analyser = analyserRef.current;
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+
+      function loop() {
+        animFrameRef.current = requestAnimationFrame(loop);
+        analyser.getByteTimeDomainData(dataArray);
+
+        ctx.clearRect(0, 0, W, H);
+        ctx.beginPath();
+        ctx.strokeStyle = "#f6ad55"; // warm amber — matches Buddy's palette
+        ctx.lineWidth = 2.5;
+        ctx.lineJoin = "round";
+
+        const sliceWidth = W / bufferLength;
+        let x = 0;
+        for (let i = 0; i < bufferLength; i++) {
+          const v = dataArray[i] / 128.0; // normalize to 0–2
+          const y = (v / 2) * H;
+          i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+          x += sliceWidth;
+        }
+        ctx.lineTo(W, H / 2);
+        ctx.stroke();
+      }
+      loop();
+    }
+
+    if (isRecording) {
+      drawWave();
+    } else {
+      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+      drawFlatline();
+    }
+
+    return () => {
+      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+    };
+  }, [isRecording]);
+
+  return e("canvas", {
+    ref: canvasRef,
+    width: 200,
+    height: 36,
+    className: "waveform-canvas",
+    title: isRecording ? "Recording..." : "Microphone idle",
+  });
+}
 
 function BreathingExercise() {
   const [phase, setPhase] = React.useState("Click to start");
@@ -219,6 +293,8 @@ function App() {
   const mediaRecorderRef = React.useRef(null);
   const audioChunksRef = React.useRef([]);
   const chatBottomRef = React.useRef(null); // ← auto-scroll anchor
+  const analyserRef = React.useRef(null);   // ← Web Audio analyser node for waveform
+  const audioCtxRef = React.useRef(null);   // ← AudioContext, kept alive for the session
 
   // ---- Load the list of past conversations once, when the app first opens ----
   React.useEffect(() => {
@@ -325,10 +401,21 @@ function App() {
     }));
   }
 
-  // Starts recording from the microphone
+  // Starts recording from the microphone + sets up Web Audio analyser for the waveform
   async function startRecording() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      // --- Web Audio setup for the live waveform visualizer ---
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      audioCtxRef.current = audioCtx;
+      const source = audioCtx.createMediaStreamSource(stream);
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 512; // lower = fewer bars but smoother wave
+      source.connect(analyser);
+      analyserRef.current = analyser;
+      // --------------------------------------------------------
+
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
@@ -339,6 +426,10 @@ function App() {
 
       mediaRecorder.onstop = async () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+        // tear down the Web Audio graph
+        analyserRef.current = null;
+        audioCtxRef.current && audioCtxRef.current.close();
+        audioCtxRef.current = null;
         await analyzeVoice(audioBlob);
         // stop the mic stream fully once we're done
         stream.getTracks().forEach((track) => track.stop());
@@ -584,6 +675,8 @@ function App() {
           },
           isRecording ? "⏹️" : "🎙️"
         ),
+        // Waveform — only visible while recording (flatlines when silent, hidden when mic is off)
+        isRecording ? e(WaveformVisualizer, { isRecording, analyserRef }) : null,
         e("input", {
           className: "chat-input",
           placeholder: "Type a message...",

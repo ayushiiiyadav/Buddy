@@ -769,3 +769,26 @@ body {
   background: rgba(45, 42, 38, 0.05);
   color: var(--ink-soft);
 }
+/* Input row — make it flex with proper sizing */
+.input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+}
+
+/* Waveform canvas — fixed width, doesn't grow or shrink */
+.waveform-canvas {
+  flex-shrink: 0;
+  width: 120px;       /* ← reduce from 200px to fit nicely */
+  height: 36px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.05);
+  align-self: center;
+}
+
+/* Text input — takes up remaining space */
+.chat-input {
+  flex: 1;
+  min-width: 0;       /* ← prevents input from overflowing flex container */
+}
