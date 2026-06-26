@@ -1,10 +1,10 @@
 // NOTE: This file uses React.createElement instead of JSX (no Babel needed).
-// Now includes voice recording + tone analysis + live waveform visualizer.
+// Now includes voice recording + live waveform + live speech-to-text transcription.
 
 const e = React.createElement;
 
 // ---- Waveform visualizer ----
-// Draws a live oscilloscope-style wave while recording, flatlines when stopped.
+// Draws a live oscilloscope-style wave while recording, flatlines when voice goes silent.
 function WaveformVisualizer({ isRecording, analyserRef }) {
   const canvasRef = React.useRef(null);
   const animFrameRef = React.useRef(null);
@@ -45,7 +45,7 @@ function WaveformVisualizer({ isRecording, analyserRef }) {
         const sliceWidth = W / bufferLength;
         let x = 0;
         for (let i = 0; i < bufferLength; i++) {
-          const v = dataArray[i] / 128.0; // normalize to 0–2
+          const v = dataArray[i] / 128.0;
           const y = (v / 2) * H;
           i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
           x += sliceWidth;
@@ -119,11 +119,16 @@ function BreathingExercise() {
   );
 }
 
-function CalmingToolkit({ showBreathing }) {
+function CalmingToolkit({ showBreathing, onDismiss }) {
   return e(
     "div",
     { className: "calming-toolkit" },
-    e("p", { className: "calming-title" }, "This sounds really tough. Let's slow down together 💛"),
+    e(
+      "div",
+      { className: "calming-toolkit-header" },
+      e("p", { className: "calming-title" }, "This sounds really tough. Let's slow down together 💛"),
+      e("button", { className: "calming-dismiss-btn", onClick: onDismiss, title: "Dismiss" }, "✕")
+    ),
     showBreathing ? e(BreathingExercise) : null,
     e(
       "div",
@@ -159,8 +164,6 @@ function ModeToggle({ mode, setMode }) {
   );
 }
 
-// The sidebar — lists all past conversations, like ChatGPT's history panel
-// The personality insight panel — reflects patterns from everything the user has said
 function PersonalityPanel({ isOpen, isLoading, data, onClose }) {
   const renderList = (items, className) =>
     items && items.length > 0
@@ -228,7 +231,7 @@ function Sidebar({ isOpen, conversationList, activeId, onSelect, onDelete, onNew
       "div",
       {
         className: "sidebar" + (isOpen ? " sidebar-open" : ""),
-        onClick: (ev) => ev.stopPropagation(), // clicking inside the sidebar shouldn't close it
+        onClick: (ev) => ev.stopPropagation(),
       },
       e("button", { className: "new-chat-btn", onClick: onNewChat }, "+ New Chat"),
       e(
@@ -250,7 +253,7 @@ function Sidebar({ isOpen, conversationList, activeId, onSelect, onDelete, onNew
                   {
                     className: "sidebar-delete-btn",
                     onClick: (ev) => {
-                      ev.stopPropagation(); // stop this click from also triggering the parent's onSelect
+                      ev.stopPropagation();
                       onDelete(conv.id, ev);
                     },
                     title: "Delete",
@@ -261,7 +264,6 @@ function Sidebar({ isOpen, conversationList, activeId, onSelect, onDelete, onNew
             )
       )
     ),
-    // clicking the dark overlay (outside the sidebar) closes it
     e("div", { className: "sidebar-click-catcher", onClick: onClose })
   );
 }
@@ -270,8 +272,8 @@ function App() {
   const [messages, setMessages] = React.useState([
     { sender: "buddy", text: "Hey! How are you feeling today? 💛" },
   ]);
-  const [conversationId, setConversationId] = React.useState(null); // null = new, unsaved chat
-  const conversationIdRef = React.useRef(null); // mirrors conversationId, but updates instantly (no React delay)
+  const [conversationId, setConversationId] = React.useState(null);
+  const conversationIdRef = React.useRef(null);
   const [conversationList, setConversationList] = React.useState([]);
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
   const [isPersonalityOpen, setIsPersonalityOpen] = React.useState(false);
@@ -283,6 +285,7 @@ function App() {
   const [intensity, setIntensity] = React.useState(0);
   const [needsSupport, setNeedsSupport] = React.useState(false);
   const [needsBreathing, setNeedsBreathing] = React.useState(false);
+  const [dismissedToolkit, setDismissedToolkit] = React.useState(false); // ← user can close the calming toolkit
   const [mode, setMode] = React.useState("auto");
   const [detectedMode, setDetectedMode] = React.useState(null);
 
@@ -292,9 +295,11 @@ function App() {
   const [isAnalyzingVoice, setIsAnalyzingVoice] = React.useState(false);
   const mediaRecorderRef = React.useRef(null);
   const audioChunksRef = React.useRef([]);
-  const chatBottomRef = React.useRef(null); // ← auto-scroll anchor
-  const analyserRef = React.useRef(null);   // ← Web Audio analyser node for waveform
-  const audioCtxRef = React.useRef(null);   // ← AudioContext, kept alive for the session
+  const chatBottomRef = React.useRef(null);         // ← auto-scroll anchor
+  const analyserRef = React.useRef(null);           // ← Web Audio analyser for waveform
+  const audioCtxRef = React.useRef(null);           // ← AudioContext
+  const speechRecognitionRef = React.useRef(null);  // ← Web Speech API for live transcription
+  const finalTranscriptRef = React.useRef("");      // ← accumulates confirmed words across results
 
   // ---- Load the list of past conversations once, when the app first opens ----
   React.useEffect(() => {
@@ -318,7 +323,6 @@ function App() {
     }
   }
 
-  // ---- Fetch a fresh personality insight, looking at every conversation ever had ----
   async function openPersonalityPanel() {
     setIsPersonalityOpen(true);
     setIsLoadingPersonality(true);
@@ -339,7 +343,6 @@ function App() {
     }
   }
 
-  // ---- Open a specific past conversation ----
   async function openConversation(id) {
     try {
       const response = await fetch(`http://localhost:8000/conversations/${id}/messages`);
@@ -352,7 +355,7 @@ function App() {
 
       setMessages(restored.length > 0 ? restored : [{ sender: "buddy", text: "Hey! How are you feeling today? 💛" }]);
       setConversationId(id);
-      conversationIdRef.current = id; // keep the ref in sync immediately
+      conversationIdRef.current = id;
       setIsSidebarOpen(false);
 
       const last = data.messages[data.messages.length - 1];
@@ -365,11 +368,10 @@ function App() {
     }
   }
 
-  // ---- Start a brand new chat ----
   function startNewChat() {
     setMessages([{ sender: "buddy", text: "Hey! How are you feeling today? 💛" }]);
     setConversationId(null);
-    conversationIdRef.current = null; // reset the ref immediately too
+    conversationIdRef.current = null;
     setEmotion(null);
     setIntensity(0);
     setNeedsSupport(false);
@@ -377,9 +379,8 @@ function App() {
     setIsSidebarOpen(false);
   }
 
-  // ---- Delete a past conversation ----
   async function deleteConversation(id, event) {
-    event.stopPropagation(); // don't trigger openConversation when clicking delete
+    event.stopPropagation();
     const confirmed = window.confirm("Delete this conversation permanently?");
     if (!confirmed) return;
 
@@ -401,21 +402,61 @@ function App() {
     }));
   }
 
-  // Starts recording from the microphone + sets up Web Audio analyser for the waveform
+  // ---- Start recording: waveform + live transcription into the input box ----
   async function startRecording() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-      // --- Web Audio setup for the live waveform visualizer ---
+      // --- Web Audio setup for the live waveform ---
       const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       audioCtxRef.current = audioCtx;
       const source = audioCtx.createMediaStreamSource(stream);
       const analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 512; // lower = fewer bars but smoother wave
+      analyser.fftSize = 512;
       source.connect(analyser);
       analyserRef.current = analyser;
-      // --------------------------------------------------------
 
+      // --- Live transcription via Web Speech API ---
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        const recognition = new SpeechRecognition();
+        recognition.continuous = true;     // keep listening until we manually stop it
+        recognition.interimResults = true; // show words live, mid-sentence
+        recognition.lang = "en-IN";        // works great for Hinglish
+
+        finalTranscriptRef.current = "";   // reset on each new recording
+        setInput("");                      // clear input box when mic starts
+
+        recognition.onresult = (event) => {
+          let interim = "";
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const result = event.results[i];
+            if (result.isFinal) {
+              // Confirmed words — lock them in
+              finalTranscriptRef.current += result[0].transcript + " ";
+            } else {
+              // Still-being-spoken words — show them live
+              interim += result[0].transcript;
+            }
+          }
+          // Input box = confirmed words + whatever you're currently saying
+          setInput((finalTranscriptRef.current + interim).trimStart());
+        };
+
+        recognition.onerror = (err) => {
+          // "no-speech" is normal when user pauses — don't treat it as a real error
+          if (err.error !== "no-speech") {
+            console.warn("Speech recognition error:", err.error);
+          }
+        };
+
+        recognition.start();
+        speechRecognitionRef.current = recognition;
+      } else {
+        console.warn("Web Speech API not supported — live transcription unavailable.");
+      }
+
+      // --- MediaRecorder — captures audio for tone analysis ---
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
@@ -426,12 +467,11 @@ function App() {
 
       mediaRecorder.onstop = async () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
-        // tear down the Web Audio graph
+        // Tear down Web Audio graph
         analyserRef.current = null;
-        audioCtxRef.current && audioCtxRef.current.close();
-        audioCtxRef.current = null;
-        await analyzeVoice(audioBlob);
-        // stop the mic stream fully once we're done
+        if (audioCtxRef.current) { audioCtxRef.current.close(); audioCtxRef.current = null; }
+        // Send to backend for TONE only — transcript is already in the input box
+        await analyzeVoiceForTone(audioBlob);
         stream.getTracks().forEach((track) => track.stop());
       };
 
@@ -443,15 +483,22 @@ function App() {
     }
   }
 
+  // ---- Stop recording: halts both speech recognition and MediaRecorder ----
   function stopRecording() {
+    // Stop speech recognition first — no more live results after this
+    if (speechRecognitionRef.current) {
+      speechRecognitionRef.current.stop();
+      speechRecognitionRef.current = null;
+    }
     if (mediaRecorderRef.current) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
     }
+    // Input box now holds the full transcript — user can edit it then press Send
   }
 
-  // Sends the recorded audio to the backend for transcription + tone analysis
-  async function analyzeVoice(audioBlob) {
+  // ---- Tone-only backend call — transcription now handled by Web Speech API ----
+  async function analyzeVoiceForTone(audioBlob) {
     setIsAnalyzingVoice(true);
     try {
       const formData = new FormData();
@@ -464,59 +511,12 @@ function App() {
 
       const data = await response.json();
       setVoiceTone(data.voice_tone);
-
-      // If the user hasn't typed anything, send to Buddy automatically
-      // using the real transcribed words + the detected tone
-      if (input.trim() === "") {
-        await sendVoiceOnlyMessage(data.transcript, data.voice_tone);
-      }
+      // Don't auto-send — transcript is in the input box, user reviews and hits Send
     } catch (err) {
-      console.error("Voice analysis error:", err);
+      console.error("Voice tone analysis error:", err);
       setVoiceTone(null);
     } finally {
       setIsAnalyzingVoice(false);
-    }
-  }
-
-  // Sends a message to Buddy using the actual transcribed words + voice tone
-  async function sendVoiceOnlyMessage(transcript, tone) {
-    const historyToSend = buildHistory(messages);
-
-    // Fallback in case transcription came back empty (e.g. silence, or transcription failed)
-    const messageText = transcript && transcript.trim() !== ""
-      ? transcript
-      : "[shared a voice message, but I couldn't make out clear words]";
-
-    // Show the actual transcribed text in the chat, not just a generic "(voice message)" label
-    const displayText = transcript && transcript.trim() !== "" ? `🎙️ ${transcript}` : "🎙️ (voice message)";
-
-    const newMessages = [...messages, { sender: "user", text: displayText }];
-    setMessages(newMessages);
-    setIsTyping(true);
-
-    try {
-      const data = await sendToBuddy(messageText, historyToSend, mode, tone);
-      setMessages((prev) => [...prev, { sender: "buddy", text: data.reply }]);
-      setEmotion(data.emotion);
-      setIntensity(data.intensity);
-      setNeedsSupport(data.needs_support);
-      setNeedsBreathing(data.needs_breathing);
-      setDetectedMode(data.detected_mode);
-      setVoiceTone(null);
-
-      if (conversationIdRef.current === null && data.conversation_id) {
-        setConversationId(data.conversation_id);
-        conversationIdRef.current = data.conversation_id;
-        refreshConversationList();
-      }
-    } catch (error) {
-      setMessages((prev) => [
-        ...prev,
-        { sender: "buddy", text: "Hmm, I couldn't reach my brain (backend). Is it running?" },
-      ]);
-      console.error("Error talking to Buddy backend:", error);
-    } finally {
-      setIsTyping(false);
     }
   }
 
@@ -529,7 +529,7 @@ function App() {
         history: history,
         mode: selectedMode,
         voice_tone: tone,
-        conversation_id: conversationIdRef.current, // read from the ref — always up to date, no React delay
+        conversation_id: conversationIdRef.current,
       }),
     });
 
@@ -558,10 +558,8 @@ function App() {
       setNeedsBreathing(data.needs_breathing);
       setDetectedMode(data.detected_mode);
       setVoiceTone(null);
+      if (data.needs_support) setDismissedToolkit(false); // re-show toolkit for each new high-intensity message
 
-      // If this was the first message of a new chat, we now have a real conversation_id —
-      // remember it (both state AND ref, so the very next message uses it correctly),
-      // and refresh the sidebar list so the new chat shows up
       if (conversationIdRef.current === null && data.conversation_id) {
         setConversationId(data.conversation_id);
         conversationIdRef.current = data.conversation_id;
@@ -604,7 +602,6 @@ function App() {
       )
     : null;
 
-  // Shows the detected voice tone as a small pending chip before sending
   const voiceTonePreview = voiceTone
     ? e("div", { className: "voice-tone-preview" }, `🎙️ Voice tone detected: ${voiceTone}`)
     : isAnalyzingVoice
@@ -654,14 +651,13 @@ function App() {
       ),
       e(ModeToggle, { mode, setMode }),
       emotionBadge,
-      // Chat window with invisible scroll anchor at the bottom
       e(
         "div",
         { className: "chat-window" },
         chatBubbles,
-        e("div", { ref: chatBottomRef }) // ← invisible anchor — always stays at the bottom
+        e("div", { ref: chatBottomRef })
       ),
-      needsSupport ? e(CalmingToolkit, { showBreathing: needsBreathing }) : null,
+      (needsSupport && !dismissedToolkit) ? e(CalmingToolkit, { showBreathing: needsBreathing, onDismiss: () => setDismissedToolkit(true) }) : null,
       voiceTonePreview,
       e(
         "div",
@@ -675,11 +671,11 @@ function App() {
           },
           isRecording ? "⏹️" : "🎙️"
         ),
-        // Waveform — only visible while recording (flatlines when silent, hidden when mic is off)
+        // Waveform — only visible while mic is active
         isRecording ? e(WaveformVisualizer, { isRecording, analyserRef }) : null,
         e("input", {
           className: "chat-input",
-          placeholder: "Type a message...",
+          placeholder: isRecording ? "Listening..." : "Type a message...",
           value: input,
           onChange: (ev) => setInput(ev.target.value),
           onKeyDown: (ev) => ev.key === "Enter" && sendMessage(),
@@ -693,8 +689,7 @@ function App() {
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(e(App));
 
-// ---- Subtle 3D tilt on mouse move (restrained — a few degrees max) ----
-// Respects prefers-reduced-motion automatically since it's a small, optional touch.
+// ---- Subtle 3D tilt on mouse move ----
 const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 if (!prefersReducedMotion) {
@@ -706,11 +701,9 @@ if (!prefersReducedMotion) {
     const cardCenterX = rect.left + rect.width / 2;
     const cardCenterY = rect.top + rect.height / 2;
 
-    // how far the mouse is from the card's center, as a fraction of the screen
     const offsetX = (ev.clientX - cardCenterX) / window.innerWidth;
     const offsetY = (ev.clientY - cardCenterY) / window.innerHeight;
 
-    // very small max tilt — a few degrees, just enough to feel alive, not gimmicky
     const maxTilt = 2.5;
     const tiltX = (-offsetY * maxTilt).toFixed(2);
     const tiltY = (offsetX * maxTilt).toFixed(2);
