@@ -373,6 +373,28 @@ body {
   50%      { transform: scale(1.15); opacity: 0.9; }
 }
 
+.calming-toolkit-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.calming-dismiss-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  color: #999;
+  padding: 2px 6px;
+  border-radius: 4px;
+  line-height: 1;
+}
+
+.calming-dismiss-btn:hover {
+  color: #555;
+  background: rgba(0,0,0,0.06);
+}
 /* ---------- Voice recording ---------- */
 .mic-btn {
   width: 42px;
