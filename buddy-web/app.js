@@ -1,5 +1,5 @@
 // NOTE: This file uses React.createElement instead of JSX (no Babel needed).
-// Now includes voice recording + live waveform + live speech-to-text transcription.
+// Now includes voice recording + tone analysis + live waveform visualizer.
 
 const e = React.createElement;
 
@@ -38,7 +38,7 @@ function WaveformVisualizer({ isRecording, analyserRef }) {
 
         ctx.clearRect(0, 0, W, H);
         ctx.beginPath();
-        ctx.strokeStyle = "#f6ad55"; // warm amber — matches Buddy's palette
+        ctx.strokeStyle = "#f6ad55";
         ctx.lineWidth = 2.5;
         ctx.lineJoin = "round";
 
@@ -285,7 +285,7 @@ function App() {
   const [intensity, setIntensity] = React.useState(0);
   const [needsSupport, setNeedsSupport] = React.useState(false);
   const [needsBreathing, setNeedsBreathing] = React.useState(false);
-  const [dismissedToolkit, setDismissedToolkit] = React.useState(false); // ← user can close the calming toolkit
+  const [dismissedToolkit, setDismissedToolkit] = React.useState(false);
   const [mode, setMode] = React.useState("auto");
   const [detectedMode, setDetectedMode] = React.useState(null);
 
@@ -295,18 +295,16 @@ function App() {
   const [isAnalyzingVoice, setIsAnalyzingVoice] = React.useState(false);
   const mediaRecorderRef = React.useRef(null);
   const audioChunksRef = React.useRef([]);
-  const chatBottomRef = React.useRef(null);         // ← auto-scroll anchor
-  const analyserRef = React.useRef(null);           // ← Web Audio analyser for waveform
-  const audioCtxRef = React.useRef(null);           // ← AudioContext
-  const speechRecognitionRef = React.useRef(null);  // ← Web Speech API for live transcription
-  const finalTranscriptRef = React.useRef("");      // ← accumulates confirmed words across results
+  const chatBottomRef = React.useRef(null);
+  const analyserRef = React.useRef(null);   // ← Web Audio analyser for waveform
+  const audioCtxRef = React.useRef(null);   // ← AudioContext
 
-  // ---- Load the list of past conversations once, when the app first opens ----
+  // ---- Load conversations on startup ----
   React.useEffect(() => {
     refreshConversationList();
   }, []);
 
-  // ---- Auto-scroll to bottom whenever messages change or Buddy starts typing ----
+  // ---- Auto-scroll on new messages ----
   React.useEffect(() => {
     if (chatBottomRef.current) {
       chatBottomRef.current.scrollIntoView({ behavior: "smooth" });
@@ -377,8 +375,8 @@ function App() {
     setNeedsSupport(false);
     setNeedsBreathing(false);
     setDismissedToolkit(false);
-    setVoiceTone(null);         // ← clear the tone banner on new chat
-    setIsAnalyzingVoice(false); // ← clear the "analyzing..." banner too
+    setVoiceTone(null);
+    setIsAnalyzingVoice(false);
     setIsSidebarOpen(false);
   }
 
@@ -390,9 +388,7 @@ function App() {
     try {
       await fetch(`http://localhost:8000/conversations/${id}`, { method: "DELETE" });
       await refreshConversationList();
-      if (conversationId === id) {
-        startNewChat();
-      }
+      if (conversationId === id) startNewChat();
     } catch (err) {
       console.error("Could not delete conversation:", err);
     }
@@ -405,134 +401,61 @@ function App() {
     }));
   }
 
-  // ---- Start recording: waveform + live transcription into the input box ----
+  // ---- Voice recording + waveform (no live transcription) ----
   async function startRecording() {
-    let stream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch (err) {
-      console.error("Microphone access error:", err);
-      alert("Couldn't access your microphone. Please allow mic permission and try again.");
-      return;
-    }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-    // --- Web Audio setup for the live waveform ---
-    try {
-      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      audioCtxRef.current = audioCtx;
-      const source = audioCtx.createMediaStreamSource(stream);
-      const analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 512;
-      source.connect(analyser);
-      analyserRef.current = analyser;
-    } catch (err) {
-      console.warn("Web Audio setup failed (waveform won't show):", err);
-    }
-
-    // --- Live transcription via Web Speech API (Chrome/Edge only) ---
-    // Wrapped in its own try/catch so a failure here never breaks recording
-    try {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (SpeechRecognition) {
-        const recognition = new SpeechRecognition();
-        recognition.continuous = true;     // keep listening until we manually stop
-        recognition.interimResults = true; // show words live, mid-sentence
-        recognition.lang = "en-IN";        // works great for Hinglish too
-
-        finalTranscriptRef.current = "";   // reset on each new recording
-        setInput("");                      // clear input box when mic starts
-
-        recognition.onresult = (event) => {
-          let interim = "";
-          for (let i = event.resultIndex; i < event.results.length; i++) {
-            const result = event.results[i];
-            if (result.isFinal) {
-              finalTranscriptRef.current += result[0].transcript + " ";
-            } else {
-              interim += result[0].transcript;
-            }
-          }
-          setInput((finalTranscriptRef.current + interim).trimStart());
-        };
-
-        recognition.onerror = (err) => {
-          if (err.error !== "no-speech") {
-            console.warn("Speech recognition error:", err.error);
-          }
-        };
-
-        recognition.start();
-        speechRecognitionRef.current = recognition;
-      } else {
-        // Firefox fallback — mic still records for tone analysis, no live transcript
-        console.warn("Web Speech API not supported — live transcription unavailable (Firefox?).");
+      // --- Web Audio setup for the live waveform ---
+      try {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        audioCtxRef.current = audioCtx;
+        const source = audioCtx.createMediaStreamSource(stream);
+        const analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 512;
+        source.connect(analyser);
+        analyserRef.current = analyser;
+      } catch (audioErr) {
+        console.warn("Web Audio setup failed (waveform won't show):", audioErr);
       }
-    } catch (err) {
-      console.warn("Speech recognition setup failed — recording still works:", err);
-    }
 
-    // --- MediaRecorder — always runs, captures audio for tone analysis ---
-    // Pick the first mime type the browser actually supports (Firefox prefers ogg/opus)
-    try {
-      const preferredMime = [
-        "audio/webm;codecs=opus",
-        "audio/webm",
-        "audio/ogg;codecs=opus",
-        "audio/ogg",
-      ].find((mime) => MediaRecorder.isTypeSupported(mime)) || "";
-
-      const mediaRecorder = preferredMime
-        ? new MediaRecorder(stream, { mimeType: preferredMime })
-        : new MediaRecorder(stream); // last resort: let the browser pick
+      const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
 
-      console.log("MediaRecorder using mime type:", mediaRecorder.mimeType);
-
       mediaRecorder.ondataavailable = (event) => {
-        if (event.data && event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
+        audioChunksRef.current.push(event.data);
       };
 
       mediaRecorder.onstop = async () => {
-        const mimeType = mediaRecorder.mimeType || "audio/ogg";
-        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
+        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+        // Tear down Web Audio graph
         analyserRef.current = null;
         if (audioCtxRef.current) { audioCtxRef.current.close(); audioCtxRef.current = null; }
-        await analyzeVoiceForTone(audioBlob);
+        await analyzeVoice(audioBlob);
         stream.getTracks().forEach((track) => track.stop());
       };
 
-      mediaRecorder.start(100); // collect data every 100ms for smoother waveform
+      mediaRecorder.start();
       setIsRecording(true);
     } catch (err) {
-      console.error("MediaRecorder failed:", err);
-      stream.getTracks().forEach((track) => track.stop());
+      console.error("Microphone access error:", err);
+      alert("Couldn't access your microphone. Please allow mic permission and try again.");
     }
   }
 
-  // ---- Stop recording: halts both speech recognition and MediaRecorder ----
   function stopRecording() {
-    // Stop speech recognition first — no more live results after this
-    if (speechRecognitionRef.current) {
-      speechRecognitionRef.current.stop();
-      speechRecognitionRef.current = null;
-    }
     if (mediaRecorderRef.current) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
     }
-    // Input box now holds the full transcript — user can edit it then press Send
   }
 
-  // ---- Tone-only backend call — transcription now handled by Web Speech API ----
-  async function analyzeVoiceForTone(audioBlob) {
+  async function analyzeVoice(audioBlob) {
     setIsAnalyzingVoice(true);
     try {
       const formData = new FormData();
-      // Use a filename the backend can handle regardless of actual encoding
-      formData.append("audio", audioBlob, "voice.ogg");
+      formData.append("audio", audioBlob, "voice.webm");
 
       const response = await fetch("http://localhost:8000/analyze-voice", {
         method: "POST",
@@ -541,12 +464,54 @@ function App() {
 
       const data = await response.json();
       setVoiceTone(data.voice_tone);
-      // Don't auto-send — transcript is in the input box, user reviews and hits Send
+
+      if (input.trim() === "") {
+        await sendVoiceOnlyMessage(data.transcript, data.voice_tone);
+      }
     } catch (err) {
-      console.error("Voice tone analysis error:", err);
+      console.error("Voice analysis error:", err);
       setVoiceTone(null);
     } finally {
       setIsAnalyzingVoice(false);
+    }
+  }
+
+  async function sendVoiceOnlyMessage(transcript, tone) {
+    const historyToSend = buildHistory(messages);
+
+    const messageText = transcript && transcript.trim() !== ""
+      ? transcript
+      : "[shared a voice message, but I couldn't make out clear words]";
+
+    const displayText = transcript && transcript.trim() !== "" ? `🎙️ ${transcript}` : "🎙️ (voice message)";
+
+    const newMessages = [...messages, { sender: "user", text: displayText }];
+    setMessages(newMessages);
+    setIsTyping(true);
+
+    try {
+      const data = await sendToBuddy(messageText, historyToSend, mode, tone);
+      setMessages((prev) => [...prev, { sender: "buddy", text: data.reply }]);
+      setEmotion(data.emotion);
+      setIntensity(data.intensity);
+      setNeedsSupport(data.needs_support);
+      setNeedsBreathing(data.needs_breathing);
+      setDetectedMode(data.detected_mode);
+      setVoiceTone(null);
+
+      if (conversationIdRef.current === null && data.conversation_id) {
+        setConversationId(data.conversation_id);
+        conversationIdRef.current = data.conversation_id;
+        refreshConversationList();
+      }
+    } catch (error) {
+      setMessages((prev) => [
+        ...prev,
+        { sender: "buddy", text: "Hmm, I couldn't reach my brain (backend). Is it running?" },
+      ]);
+      console.error("Error talking to Buddy backend:", error);
+    } finally {
+      setIsTyping(false);
     }
   }
 
@@ -562,9 +527,7 @@ function App() {
         conversation_id: conversationIdRef.current,
       }),
     });
-
-    const data = await response.json();
-    return data;
+    return await response.json();
   }
 
   async function sendMessage() {
@@ -588,7 +551,7 @@ function App() {
       setNeedsBreathing(data.needs_breathing);
       setDetectedMode(data.detected_mode);
       setVoiceTone(null);
-      if (data.needs_support) setDismissedToolkit(false); // re-show toolkit for each new high-intensity message
+      if (data.needs_support) setDismissedToolkit(false);
 
       if (conversationIdRef.current === null && data.conversation_id) {
         setConversationId(data.conversation_id);
@@ -687,7 +650,9 @@ function App() {
         chatBubbles,
         e("div", { ref: chatBottomRef })
       ),
-      (needsSupport && !dismissedToolkit) ? e(CalmingToolkit, { showBreathing: needsBreathing, onDismiss: () => setDismissedToolkit(true) }) : null,
+      (needsSupport && !dismissedToolkit)
+        ? e(CalmingToolkit, { showBreathing: needsBreathing, onDismiss: () => setDismissedToolkit(true) })
+        : null,
       voiceTonePreview,
       e(
         "div",
@@ -705,7 +670,7 @@ function App() {
         isRecording ? e(WaveformVisualizer, { isRecording, analyserRef }) : null,
         e("input", {
           className: "chat-input",
-          placeholder: isRecording ? "Listening..." : "Type a message...",
+          placeholder: "Type a message...",
           value: input,
           onChange: (ev) => setInput(ev.target.value),
           onKeyDown: (ev) => ev.key === "Enter" && sendMessage(),
