@@ -376,6 +376,9 @@ function App() {
     setIntensity(0);
     setNeedsSupport(false);
     setNeedsBreathing(false);
+    setDismissedToolkit(false);
+    setVoiceTone(null);         // ← clear the tone banner on new chat
+    setIsAnalyzingVoice(false); // ← clear the "analyzing..." banner too
     setIsSidebarOpen(false);
   }
 
@@ -404,10 +407,17 @@ function App() {
 
   // ---- Start recording: waveform + live transcription into the input box ----
   async function startRecording() {
+    let stream;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+      console.error("Microphone access error:", err);
+      alert("Couldn't access your microphone. Please allow mic permission and try again.");
+      return;
+    }
 
-      // --- Web Audio setup for the live waveform ---
+    // --- Web Audio setup for the live waveform ---
+    try {
       const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       audioCtxRef.current = audioCtx;
       const source = audioCtx.createMediaStreamSource(stream);
@@ -415,14 +425,19 @@ function App() {
       analyser.fftSize = 512;
       source.connect(analyser);
       analyserRef.current = analyser;
+    } catch (err) {
+      console.warn("Web Audio setup failed (waveform won't show):", err);
+    }
 
-      // --- Live transcription via Web Speech API ---
+    // --- Live transcription via Web Speech API (Chrome/Edge only) ---
+    // Wrapped in its own try/catch so a failure here never breaks recording
+    try {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (SpeechRecognition) {
         const recognition = new SpeechRecognition();
-        recognition.continuous = true;     // keep listening until we manually stop it
+        recognition.continuous = true;     // keep listening until we manually stop
         recognition.interimResults = true; // show words live, mid-sentence
-        recognition.lang = "en-IN";        // works great for Hinglish
+        recognition.lang = "en-IN";        // works great for Hinglish too
 
         finalTranscriptRef.current = "";   // reset on each new recording
         setInput("");                      // clear input box when mic starts
@@ -432,19 +447,15 @@ function App() {
           for (let i = event.resultIndex; i < event.results.length; i++) {
             const result = event.results[i];
             if (result.isFinal) {
-              // Confirmed words — lock them in
               finalTranscriptRef.current += result[0].transcript + " ";
             } else {
-              // Still-being-spoken words — show them live
               interim += result[0].transcript;
             }
           }
-          // Input box = confirmed words + whatever you're currently saying
           setInput((finalTranscriptRef.current + interim).trimStart());
         };
 
         recognition.onerror = (err) => {
-          // "no-speech" is normal when user pauses — don't treat it as a real error
           if (err.error !== "no-speech") {
             console.warn("Speech recognition error:", err.error);
           }
@@ -453,33 +464,51 @@ function App() {
         recognition.start();
         speechRecognitionRef.current = recognition;
       } else {
-        console.warn("Web Speech API not supported — live transcription unavailable.");
+        // Firefox fallback — mic still records for tone analysis, no live transcript
+        console.warn("Web Speech API not supported — live transcription unavailable (Firefox?).");
       }
+    } catch (err) {
+      console.warn("Speech recognition setup failed — recording still works:", err);
+    }
 
-      // --- MediaRecorder — captures audio for tone analysis ---
-      const mediaRecorder = new MediaRecorder(stream);
+    // --- MediaRecorder — always runs, captures audio for tone analysis ---
+    // Pick the first mime type the browser actually supports (Firefox prefers ogg/opus)
+    try {
+      const preferredMime = [
+        "audio/webm;codecs=opus",
+        "audio/webm",
+        "audio/ogg;codecs=opus",
+        "audio/ogg",
+      ].find((mime) => MediaRecorder.isTypeSupported(mime)) || "";
+
+      const mediaRecorder = preferredMime
+        ? new MediaRecorder(stream, { mimeType: preferredMime })
+        : new MediaRecorder(stream); // last resort: let the browser pick
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
 
+      console.log("MediaRecorder using mime type:", mediaRecorder.mimeType);
+
       mediaRecorder.ondataavailable = (event) => {
-        audioChunksRef.current.push(event.data);
+        if (event.data && event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
       };
 
       mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
-        // Tear down Web Audio graph
+        const mimeType = mediaRecorder.mimeType || "audio/ogg";
+        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
         analyserRef.current = null;
         if (audioCtxRef.current) { audioCtxRef.current.close(); audioCtxRef.current = null; }
-        // Send to backend for TONE only — transcript is already in the input box
         await analyzeVoiceForTone(audioBlob);
         stream.getTracks().forEach((track) => track.stop());
       };
 
-      mediaRecorder.start();
+      mediaRecorder.start(100); // collect data every 100ms for smoother waveform
       setIsRecording(true);
     } catch (err) {
-      console.error("Microphone access error:", err);
-      alert("Couldn't access your microphone. Please allow mic permission and try again.");
+      console.error("MediaRecorder failed:", err);
+      stream.getTracks().forEach((track) => track.stop());
     }
   }
 
@@ -502,7 +531,8 @@ function App() {
     setIsAnalyzingVoice(true);
     try {
       const formData = new FormData();
-      formData.append("audio", audioBlob, "voice.webm");
+      // Use a filename the backend can handle regardless of actual encoding
+      formData.append("audio", audioBlob, "voice.ogg");
 
       const response = await fetch("http://localhost:8000/analyze-voice", {
         method: "POST",

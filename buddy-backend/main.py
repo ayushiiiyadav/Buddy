@@ -335,7 +335,8 @@ def remove_conversation(conversation_id: int):
 # ---------- Voice analysis endpoint (tone + transcription) ----------
 @app.post("/analyze-voice")
 async def analyze_voice(audio: UploadFile = File(...)):
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as tmp:
+    suffix = "." + (audio.content_type or "audio/ogg").split("/")[-1].split(";")[0]
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         contents = await audio.read()
         tmp.write(contents)
         tmp_path = tmp.name
