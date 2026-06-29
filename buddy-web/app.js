@@ -1,10 +1,4 @@
-// NOTE: This file uses React.createElement instead of JSX (no Babel needed).
-// Now includes voice recording + tone analysis + live waveform visualizer.
-
 const e = React.createElement;
-
-// ---- Waveform visualizer ----
-// Draws a live oscilloscope-style wave while recording, flatlines when voice goes silent.
 function WaveformVisualizer({ isRecording, analyserRef }) {
   const canvasRef = React.useRef(null);
   const animFrameRef = React.useRef(null);
@@ -289,22 +283,19 @@ function App() {
   const [mode, setMode] = React.useState("auto");
   const [detectedMode, setDetectedMode] = React.useState(null);
 
-  // ---- Voice recording state ----
   const [isRecording, setIsRecording] = React.useState(false);
   const [voiceTone, setVoiceTone] = React.useState(null);
   const [isAnalyzingVoice, setIsAnalyzingVoice] = React.useState(false);
   const mediaRecorderRef = React.useRef(null);
   const audioChunksRef = React.useRef([]);
   const chatBottomRef = React.useRef(null);
-  const analyserRef = React.useRef(null);   // ← Web Audio analyser for waveform
-  const audioCtxRef = React.useRef(null);   // ← AudioContext
+  const analyserRef = React.useRef(null);   
+  const audioCtxRef = React.useRef(null);   
 
-  // ---- Load conversations on startup ----
   React.useEffect(() => {
     refreshConversationList();
   }, []);
 
-  // ---- Auto-scroll on new messages ----
   React.useEffect(() => {
     if (chatBottomRef.current) {
       chatBottomRef.current.scrollIntoView({ behavior: "smooth" });
@@ -401,12 +392,10 @@ function App() {
     }));
   }
 
-  // ---- Voice recording + waveform (no live transcription) ----
   async function startRecording() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-      // --- Web Audio setup for the live waveform ---
       try {
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         audioCtxRef.current = audioCtx;

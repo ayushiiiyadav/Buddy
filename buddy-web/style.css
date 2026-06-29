@@ -1,23 +1,17 @@
-/* ============================================
-   BUDDY — design system v2
-   Mood: warm clay + old paper + a living pulse
-   Palette: terracotta, sage, ink, parchment
-   ============================================ */
-
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..600&family=Inter:wght@400;500;600&display=swap');
 
 :root {
-  --paper: #FBF6EE;          /* warm cream background, like old paper */
-  --ink: #2D2A26;            /* deep warm ink for text */
-  --ink-soft: #6B6258;       /* muted secondary text */
-  --buddy-bubble: #EFE4D2;   /* soft parchment — Buddy's voice */
+  --paper: #FBF6EE;         
+  --ink: #2D2A26;           
+  --ink-soft: #6B6258;       
+  --buddy-bubble: #EFE4D2;   
   --buddy-text: #6B3A22;
-  --user-bubble: #D7E1D6;    /* sage mist — the user's voice */
+  --user-bubble: #D7E1D6;
   --user-text: #344A38;
-  --accent: #C1572E;         /* clay terracotta — primary action color */
-  --accent-deep: #8C4A2F;    /* burnt sienna — hover/deep state */
-  --calm-bg: #F3EBDD;        /* gentle parchment wash for calming toolkit */
-  --warm-glow: #EFE0C8;      /* soft clay for emotion badge */
+  --accent: #C1572E;         
+  --accent-deep: #8C4A2F;    
+  --calm-bg: #F3EBDD;        
+  --warm-glow: #EFE0C8;      
   --warm-glow-text: #6B3A22;
   --shadow-sm: 0 2px 8px rgba(45, 42, 38, 0.06);
   --shadow-md: 0 6px 20px rgba(45, 42, 38, 0.10);
@@ -47,10 +41,9 @@ body {
   font-family: 'Inter', "Segoe UI", Arial, sans-serif;
   color: var(--ink);
   min-height: 100vh;
-  perspective: 1800px; /* enables the subtle 3D tilt on the chat card */
+  perspective: 1800px; 
 }
 
-/* ---------- The chat card itself: soft depth, gentle tilt on mouse move ---------- */
 .chat-screen {
   display: flex;
   flex-direction: column;
@@ -67,7 +60,6 @@ body {
   will-change: transform;
 }
 
-/* ---------- Header ---------- */
 .title {
   text-align: center;
   color: var(--accent-deep);
@@ -161,7 +153,6 @@ body {
   font-style: italic;
 }
 
-/* ---------- Emotion badge — the signature "breathing" element ---------- */
 .emotion-badge {
   margin: 14px 16px 0;
   padding: 9px 14px;
@@ -182,7 +173,6 @@ body {
   50%      { box-shadow: 0 0 0 6px rgba(193, 87, 46, 0); transform: scale(1.015); }
 }
 
-/* ---------- Chat window ---------- */
 .chat-window {
   flex: 1;
   padding: 18px 16px;
@@ -251,7 +241,6 @@ body {
   50%      { opacity: 0.9; transform: scale(1.1); }
 }
 
-/* ---------- Mode toggle ---------- */
 .mode-toggle {
   display: flex;
   gap: 6px;
@@ -284,7 +273,6 @@ body {
   box-shadow: var(--shadow-sm);
 }
 
-/* ---------- Calming toolkit ---------- */
 .calming-toolkit {
   margin: 0 16px 14px;
   padding: 16px;
@@ -358,7 +346,6 @@ body {
   opacity: 0.85;
 }
 
-/* A soft breathing "halo" ring behind the breathing box, syncs with the exercise */
 .breathing-box::before {
   content: "";
   position: absolute;
@@ -395,7 +382,7 @@ body {
   color: #555;
   background: rgba(0,0,0,0.06);
 }
-/* ---------- Voice recording ---------- */
+
 .mic-btn {
   width: 42px;
   height: 42px;
@@ -440,7 +427,6 @@ body {
   animation: riseIn 0.3s ease;
 }
 
-/* ---------- Input row ---------- */
 .input-row {
   display: flex;
   gap: 10px;
@@ -487,7 +473,6 @@ body {
   transform: translateY(0) scale(0.96);
 }
 
-/* ---------- Scrollbar, subtle ---------- */
 .chat-window::-webkit-scrollbar {
   width: 6px;
 }
@@ -497,12 +482,10 @@ body {
   border-radius: 10px;
 }
 
-/* ---------- App wrapper (holds sidebar + chat together) ---------- */
 .app-wrapper {
   position: relative;
 }
 
-/* ---------- Sidebar ---------- */
 .sidebar-overlay {
   position: fixed;
   inset: 0;
@@ -633,7 +616,6 @@ body {
   transform: scale(1.15);
 }
 
-/* ---------- Mobile ---------- */
 @media (max-width: 480px) {
   .chat-screen {
     max-width: 100%;
@@ -644,7 +626,6 @@ body {
   }
 }
 
-/* ---------- Personality reflection panel ---------- */
 .personality-overlay {
   position: fixed;
   inset: 0;
@@ -791,7 +772,7 @@ body {
   background: rgba(45, 42, 38, 0.05);
   color: var(--ink-soft);
 }
-/* Input row — make it flex with proper sizing */
+
 .input-row {
   display: flex;
   align-items: center;
@@ -799,18 +780,16 @@ body {
   padding: 10px 12px;
 }
 
-/* Waveform canvas — fixed width, doesn't grow or shrink */
 .waveform-canvas {
   flex-shrink: 0;
-  width: 120px;       /* ← reduce from 200px to fit nicely */
+  width: 120px;       
   height: 36px;
   border-radius: 8px;
   background: rgba(0, 0, 0, 0.05);
   align-self: center;
 }
 
-/* Text input — takes up remaining space */
 .chat-input {
   flex: 1;
-  min-width: 0;       /* ← prevents input from overflowing flex container */
+  min-width: 0;     
 }

@@ -1,6 +1,3 @@
-# Buddy backend — FastAPI server that talks to Groq
-# Now saves chat history permanently using SQLite (a real database file on your PC)
-
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -32,9 +29,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ---------- Database setup ----------
-# Now supports MULTIPLE separate conversations, like ChatGPT's sidebar —
-# each conversation has its own id, title, and list of messages.
 DB_PATH = os.path.join(os.path.dirname(__file__), "buddy.db")
 
 def init_db():
@@ -95,8 +89,6 @@ def load_conversation_list():
     return [{"id": row[0], "title": row[1], "created_at": row[2]} for row in rows]
 
 def load_all_user_messages():
-    # Pulls every message the USER has ever sent, across ALL conversations —
-    # this is the raw material for the personality insight feature.
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("SELECT content FROM messages WHERE role = 'user' ORDER BY id ASC")
@@ -133,7 +125,6 @@ def update_conversation_title(conversation_id, title):
     conn.commit()
     conn.close()
 
-# ---------- Existing chat logic ----------
 class HistoryMessage(BaseModel):
     role: str
     content: str
@@ -143,7 +134,7 @@ class ChatRequest(BaseModel):
     history: List[HistoryMessage] = []
     mode: Optional[str] = "auto"
     voice_tone: Optional[str] = None
-    conversation_id: Optional[int] = None  # which conversation this message belongs to
+    conversation_id: Optional[int] = None
 
 BUDDY_SYSTEM_PROMPT = """
 You are Buddy — a warm, caring best friend AND a study companion.
@@ -195,8 +186,6 @@ If intensity is high, prioritize emotional support over academic help regardless
 """
 
 HIGH_INTENSITY_THRESHOLD = 70
-
-# The breathing exercise is more specific — only for anxious/breathless feelings at very high intensity
 BREATHING_INTENSITY_THRESHOLD = 90
 ANXIETY_RELATED_EMOTIONS = {"anxious", "panicked", "breathless", "overwhelmed", "scared", "fearful", "nervous"}
 
@@ -234,17 +223,14 @@ def chat(request: ChatRequest):
     emotion = data.get("emotion", "neutral")
     reply = data.get("reply", "I'm here for you.")
 
-    # If no conversation exists yet, create one now — title it using the user's first message
     conversation_id = request.conversation_id
     if conversation_id is None:
         title = request.message[:40] + ("..." if len(request.message) > 40 else "")
         conversation_id = create_conversation(title)
 
-    # Save BOTH the user's message and Buddy's reply to this specific conversation
     save_message(conversation_id, "user", request.message, emotion, intensity)
     save_message(conversation_id, "assistant", reply, emotion, intensity)
 
-    # The breathing exercise only shows for anxiety/breathlessness specifically, and only at 90+ intensity
     emotion_lower = emotion.lower().strip()
     needs_breathing = intensity >= BREATHING_INTENSITY_THRESHOLD and emotion_lower in ANXIETY_RELATED_EMOTIONS
 
@@ -255,15 +241,13 @@ def chat(request: ChatRequest):
         "needs_support": intensity >= HIGH_INTENSITY_THRESHOLD,
         "needs_breathing": needs_breathing,
         "detected_mode": data.get("detected_mode", "support"),
-        "conversation_id": conversation_id,  # send back so the frontend knows which chat this belongs to
+        "conversation_id": conversation_id,
     }
 
-# ---------- NEW: List all past conversations (for the sidebar) ----------
 @app.get("/conversations")
 def get_conversations():
     return {"conversations": load_conversation_list()}
 
-# ---------- NEW: Personality insight — analyzes everything the user has ever said ----------
 PERSONALITY_PROMPT = """
 You are an insightful, warm observer analyzing someone's messages to a companion app
 over time, to reflect their personality back to them — like a thoughtful friend who has
@@ -299,7 +283,6 @@ def personality_insight():
             "recurring_themes": [],
         }
 
-    # Combine all messages into one big block of text for analysis
     all_messages_text = "\n".join(f"- {msg}" for msg in user_messages)
 
     response = client.chat.completions.create(
@@ -321,18 +304,15 @@ def personality_insight():
         "recurring_themes": data.get("recurring_themes", []),
     }
 
-# ---------- NEW: Get messages for one specific conversation ----------
 @app.get("/conversations/{conversation_id}/messages")
 def get_conversation_messages(conversation_id: int):
     return {"messages": load_conversation_messages(conversation_id)}
 
-# ---------- NEW: Delete a specific conversation ----------
 @app.delete("/conversations/{conversation_id}")
 def remove_conversation(conversation_id: int):
     delete_conversation(conversation_id)
     return {"status": "Conversation deleted"}
 
-# ---------- Voice analysis endpoint (tone + transcription) ----------
 @app.post("/analyze-voice")
 async def analyze_voice(audio: UploadFile = File(...)):
     suffix = "." + (audio.content_type or "audio/ogg").split("/")[-1].split(";")[0]
