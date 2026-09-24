@@ -9,11 +9,12 @@ import json
 import librosa
 import numpy as np
 import tempfile
-import sqlite3
+import psycopg2
 from datetime import datetime
 
 load_dotenv()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+DATABASE_URL = os.getenv("DATABASE_URL")  # postgres connection string from Railway/Neon
 
 client = OpenAI(
     api_key=GROQ_API_KEY,
@@ -29,81 +30,90 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "buddy.db")
+def get_conn():
+    return psycopg2.connect(DATABASE_URL)
 
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS conversations (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER,
             title TEXT NOT NULL,
             created_at TEXT NOT NULL
         )
     """)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS messages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            conversation_id INTEGER NOT NULL,
+            id SERIAL PRIMARY KEY,
+            conversation_id INTEGER NOT NULL REFERENCES conversations (id),
+            user_id INTEGER,
             role TEXT NOT NULL,
             content TEXT NOT NULL,
             emotion TEXT,
             intensity INTEGER,
-            timestamp TEXT NOT NULL,
-            FOREIGN KEY (conversation_id) REFERENCES conversations (id)
+            source TEXT DEFAULT 'text',
+            timestamp TEXT NOT NULL
         )
     """)
     conn.commit()
+    cursor.close()
     conn.close()
 
 init_db()
 
 def create_conversation(title):
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO conversations (title, created_at) VALUES (?, ?)",
+        "INSERT INTO conversations (title, created_at) VALUES (%s, %s) RETURNING id",
         (title, datetime.now().isoformat()),
     )
+    new_id = cursor.fetchone()[0]
     conn.commit()
-    new_id = cursor.lastrowid
+    cursor.close()
     conn.close()
     return new_id
 
 def save_message(conversation_id, role, content, emotion=None, intensity=None):
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO messages (conversation_id, role, content, emotion, intensity, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO messages (conversation_id, role, content, emotion, intensity, timestamp) VALUES (%s, %s, %s, %s, %s, %s)",
         (conversation_id, role, content, emotion, intensity, datetime.now().isoformat()),
     )
     conn.commit()
+    cursor.close()
     conn.close()
 
 def load_conversation_list():
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     cursor = conn.cursor()
     cursor.execute("SELECT id, title, created_at FROM conversations ORDER BY id DESC")
     rows = cursor.fetchall()
+    cursor.close()
     conn.close()
     return [{"id": row[0], "title": row[1], "created_at": row[2]} for row in rows]
 
 def load_all_user_messages():
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     cursor = conn.cursor()
     cursor.execute("SELECT content FROM messages WHERE role = 'user' ORDER BY id ASC")
     rows = cursor.fetchall()
+    cursor.close()
     conn.close()
     return [row[0] for row in rows]
 
 def load_conversation_messages(conversation_id):
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT role, content, emotion, intensity, timestamp FROM messages WHERE conversation_id = ? ORDER BY id ASC",
+        "SELECT role, content, emotion, intensity, timestamp FROM messages WHERE conversation_id = %s ORDER BY id ASC",
         (conversation_id,),
     )
     rows = cursor.fetchall()
+    cursor.close()
     conn.close()
     return [
         {"role": row[0], "content": row[1], "emotion": row[2], "intensity": row[3], "timestamp": row[4]}
@@ -111,18 +121,20 @@ def load_conversation_messages(conversation_id):
     ]
 
 def delete_conversation(conversation_id):
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM messages WHERE conversation_id = ?", (conversation_id,))
-    cursor.execute("DELETE FROM conversations WHERE id = ?", (conversation_id,))
+    cursor.execute("DELETE FROM messages WHERE conversation_id = %s", (conversation_id,))
+    cursor.execute("DELETE FROM conversations WHERE id = %s", (conversation_id,))
     conn.commit()
+    cursor.close()
     conn.close()
 
 def update_conversation_title(conversation_id, title):
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     cursor = conn.cursor()
-    cursor.execute("UPDATE conversations SET title = ? WHERE id = ?", (title, conversation_id))
+    cursor.execute("UPDATE conversations SET title = %s WHERE id = %s", (title, conversation_id))
     conn.commit()
+    cursor.close()
     conn.close()
 
 class HistoryMessage(BaseModel):
@@ -207,7 +219,7 @@ def chat(request: ChatRequest):
     messages.append({"role": "user", "content": user_content})
 
     response = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
+        model="openai/gpt-oss-120b",
         messages=messages,
         response_format={"type": "json_object"},
     )
@@ -224,7 +236,7 @@ def chat(request: ChatRequest):
     reply = data.get("reply", "I'm here for you.")
 
     conversation_id = request.conversation_id
-    if conversation_id is None:
+    if not conversation_id:
         title = request.message[:40] + ("..." if len(request.message) > 40 else "")
         conversation_id = create_conversation(title)
 
@@ -286,7 +298,7 @@ def personality_insight():
     all_messages_text = "\n".join(f"- {msg}" for msg in user_messages)
 
     response = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
+        model="openai/gpt-oss-120b",
         messages=[
             {"role": "system", "content": PERSONALITY_PROMPT},
             {"role": "user", "content": f"Here are all the messages this person has sent over time:\n\n{all_messages_text}"},
