@@ -304,7 +304,7 @@ function App() {
 
   async function refreshConversationList() {
     try {
-      const response = await fetch("http://localhost:8000/conversations");
+      const response = await fetch("https://secure-creativity-production-5a73.up.railway.app/conversations");
       const data = await response.json();
       setConversationList(data.conversations || []);
     } catch (err) {
@@ -316,7 +316,7 @@ function App() {
     setIsPersonalityOpen(true);
     setIsLoadingPersonality(true);
     try {
-      const response = await fetch("http://localhost:8000/personality-insight");
+      const response = await fetch("https://secure-creativity-production-5a73.up.railway.app/personality-insight");
       const data = await response.json();
       setPersonalityData(data);
     } catch (err) {
@@ -334,7 +334,7 @@ function App() {
 
   async function openConversation(id) {
     try {
-      const response = await fetch(`http://localhost:8000/conversations/${id}/messages`);
+      const response = await fetch(`https://secure-creativity-production-5a73.up.railway.app/conversations/${id}/messages`);
       const data = await response.json();
 
       const restored = data.messages.map((msg) => ({
@@ -377,7 +377,7 @@ function App() {
     if (!confirmed) return;
 
     try {
-      await fetch(`http://localhost:8000/conversations/${id}`, { method: "DELETE" });
+      await fetch(`https://secure-creativity-production-5a73.up.railway.app/conversations/${id}`, { method: "DELETE" });
       await refreshConversationList();
       if (conversationId === id) startNewChat();
     } catch (err) {
@@ -446,7 +446,7 @@ function App() {
       const formData = new FormData();
       formData.append("audio", audioBlob, "voice.webm");
 
-      const response = await fetch("http://localhost:8000/analyze-voice", {
+      const response = await fetch("https://secure-creativity-production-5a73.up.railway.app/analyze-voice", {
         method: "POST",
         body: formData,
       });
@@ -505,7 +505,7 @@ function App() {
   }
 
   async function sendToBuddy(userMessage, history, selectedMode, tone) {
-    const response = await fetch("http://localhost:8000/chat", {
+    const response = await fetch("https://secure-creativity-production-5a73.up.railway.app/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
