@@ -152,6 +152,25 @@ class ChatRequest(BaseModel):
 class SpeakRequest(BaseModel):
     text: str
 
+import re
+
+EMOJI_PATTERN = re.compile(
+    "["
+    "\U0001F300-\U0001FAFF"  # symbols & pictographs, emoticons, transport, supplemental symbols
+    "\U00002600-\U000027BF"  # misc symbols, dingbats
+    "\U0001F1E0-\U0001F1FF"  # flags
+    "\U00002190-\U000021FF"  # arrows (some emoji-adjacent)
+    "\U00002700-\U000027BF"
+    "\U0001F900-\U0001F9FF"
+    "\U00002B00-\U00002BFF"
+    "\U0000FE0F"             # variation selector (emoji presentation)
+    "]+",
+    flags=re.UNICODE,
+)
+
+def strip_emoji(text: str) -> str:
+    return EMOJI_PATTERN.sub("", text).strip()
+
 BUDDY_SYSTEM_PROMPT = """
 You are Buddy — a warm, caring best friend AND a study companion.
 You remember the conversation so far and respond with that context in mind.
@@ -396,10 +415,12 @@ async def analyze_voice(audio: UploadFile = File(...)):
 
 @app.post("/speak")
 def speak(request: SpeakRequest):
+    clean_text = strip_emoji(request.text)
+
     tts_response = client.audio.speech.create(
         model="canopylabs/orpheus-v1-english",
         voice="autumn",
-        input=request.text,
+        input=clean_text,
         response_format="wav",
     )
 
