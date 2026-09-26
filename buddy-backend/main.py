@@ -340,6 +340,7 @@ async def analyze_voice(audio: UploadFile = File(...)):
                 transcription = client.audio.transcriptions.create(
                     file=audio_file,
                     model="whisper-large-v3-turbo",
+                    language= "en",
                 )
             transcript_text = transcription.text
         except Exception as transcribe_error:
