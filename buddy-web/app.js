@@ -282,6 +282,7 @@ function App() {
   const [dismissedToolkit, setDismissedToolkit] = React.useState(false);
   const [mode, setMode] = React.useState("auto");
   const [detectedMode, setDetectedMode] = React.useState(null);
+  const [isMuted, setIsMuted] = React.useState(false);
 
   const [isRecording, setIsRecording] = React.useState(false);
   const [voiceTone, setVoiceTone] = React.useState(null);
@@ -358,7 +359,8 @@ function App() {
   }
 
   function startNewChat() {
-    setMessages([{ sender: "buddy", text: "Hey! How are you feeling today? 💛" }]);
+  window.speechSynthesis.cancel();
+   setMessages([{ sender: "buddy", text: "Hey! How are you feeling today? 💛" }]);
     setConversationId(null);
     conversationIdRef.current = null;
     setEmotion(null);
@@ -391,6 +393,15 @@ function App() {
       content: msg.text,
     }));
   }
+
+  function speakReply(text) {
+  if (isMuted || !text) return;
+  window.speechSynthesis.cancel(); // stop any reply still talking
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.rate = 0.95;
+  utterance.pitch = 1.0;
+  window.speechSynthesis.speak(utterance);
+}
 
   async function startRecording() {
     try {
@@ -481,6 +492,7 @@ function App() {
     try {
       const data = await sendToBuddy(messageText, historyToSend, mode, tone);
       setMessages((prev) => [...prev, { sender: "buddy", text: data.reply }]);
+      speakReply(data.reply);
       setEmotion(data.emotion);
       setIntensity(data.intensity);
       setNeedsSupport(data.needs_support);
@@ -534,6 +546,7 @@ function App() {
     try {
       const data = await sendToBuddy(userMessage, historyToSend, mode, toneToSend);
       setMessages((prev) => [...prev, { sender: "buddy", text: data.reply }]);
+      speakReply(data.reply);
       setEmotion(data.emotion);
       setIntensity(data.intensity);
       setNeedsSupport(data.needs_support);
@@ -623,6 +636,11 @@ function App() {
         e(
           "div",
           { className: "header-right-group" },
+          e(
+            "button",
+            { className: "personality-btn", onClick: () => setIsMuted(!isMuted), title: isMuted ? "Unmute Buddy" : "Mute Buddy" },
+            isMuted ? "🔇" : "🔊"
+          ),
           e(
             "button",
             { className: "personality-btn", onClick: openPersonalityPanel, title: "Your personality reflection" },
