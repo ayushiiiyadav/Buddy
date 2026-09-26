@@ -425,7 +425,7 @@ def speak(request: SpeakRequest):
     )
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-        tts_response.write_to_file(tmp.name)
+        tts_response.stream_to_file(tmp.name)
         tmp_path = tmp.name
 
     try:
