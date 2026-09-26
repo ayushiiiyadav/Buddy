@@ -1,5 +1,6 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pydantic import BaseModel
 from typing import List, Optional
 from openai import OpenAI
@@ -147,6 +148,9 @@ class ChatRequest(BaseModel):
     mode: Optional[str] = "auto"
     voice_tone: Optional[str] = None
     conversation_id: Optional[int] = None
+
+class SpeakRequest(BaseModel):
+    text: str
 
 BUDDY_SYSTEM_PROMPT = """
 You are Buddy — a warm, caring best friend AND a study companion.
@@ -340,7 +344,7 @@ async def analyze_voice(audio: UploadFile = File(...)):
                 transcription = client.audio.transcriptions.create(
                     file=audio_file,
                     model="whisper-large-v3-turbo",
-                    language= "en",
+                    language="en",
                 )
             transcript_text = transcription.text
         except Exception as transcribe_error:
@@ -389,6 +393,27 @@ async def analyze_voice(audio: UploadFile = File(...)):
         }
     finally:
         os.remove(tmp_path)
+
+@app.post("/speak")
+def speak(request: SpeakRequest):
+    tts_response = client.audio.speech.create(
+        model="canopylabs/orpheus-v1-english",
+        voice="autumn",
+        input=request.text,
+        response_format="wav",
+    )
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+        tts_response.write_to_file(tmp.name)
+        tmp_path = tmp.name
+
+    try:
+        with open(tmp_path, "rb") as f:
+            audio_bytes = f.read()
+    finally:
+        os.remove(tmp_path)
+
+    return Response(content=audio_bytes, media_type="audio/wav")
 
 @app.get("/")
 def home():
