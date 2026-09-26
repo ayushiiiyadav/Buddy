@@ -292,6 +292,7 @@ function App() {
   const chatBottomRef = React.useRef(null);
   const analyserRef = React.useRef(null);   
   const audioCtxRef = React.useRef(null);   
+  const currentAudioRef = React.useRef(null);
 
   React.useEffect(() => {
     refreshConversationList();
@@ -359,7 +360,7 @@ function App() {
   }
 
   function startNewChat() {
-  window.speechSynthesis.cancel();
+   stopSpeaking();
    setMessages([{ sender: "buddy", text: "Hey! How are you feeling today? 💛" }]);
     setConversationId(null);
     conversationIdRef.current = null;
@@ -393,14 +394,31 @@ function App() {
       content: msg.text,
     }));
   }
-
-  function speakReply(text) {
+async function speakReply(text) {
   if (isMuted || !text) return;
-  window.speechSynthesis.cancel(); // stop any reply still talking
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.rate = 0.95;
-  utterance.pitch = 1.0;
-  window.speechSynthesis.speak(utterance);
+  stopSpeaking();
+  try {
+    const response = await fetch("https://secure-creativity-production-5a73.up.railway.app/speak", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: text }),
+    });
+    const audioBlob = await response.blob();
+    const audioUrl = URL.createObjectURL(audioBlob);
+    const audio = new Audio(audioUrl);
+    currentAudioRef.current = audio;
+    audio.play();
+  } catch (err) {
+    console.error("Voice reply error:", err);
+  }
+}
+
+function stopSpeaking() {
+  if (currentAudioRef.current) {
+    currentAudioRef.current.pause();
+    currentAudioRef.current.currentTime = 0;
+    currentAudioRef.current = null;
+  }
 }
 
   async function startRecording() {
@@ -638,7 +656,14 @@ function App() {
           { className: "header-right-group" },
           e(
             "button",
-            { className: "personality-btn", onClick: () => setIsMuted(!isMuted), title: isMuted ? "Unmute Buddy" : "Mute Buddy" },
+           {
+           className: "personality-btn",
+           onClick: () => {
+           setIsMuted(!isMuted);
+            if (!isMuted) stopSpeaking();
+                     },
+            title: isMuted ? "Unmute Buddy" : "Mute Buddy",
+          },
             isMuted ? "🔇" : "🔊"
           ),
           e(
