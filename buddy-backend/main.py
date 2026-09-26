@@ -152,24 +152,25 @@ class ChatRequest(BaseModel):
 class SpeakRequest(BaseModel):
     text: str
 
-import re
+@app.post("/speak")
+def speak(request: SpeakRequest):
+    with client.audio.speech.with_streaming_response.create(
+        model="canopylabs/orpheus-v1-english",
+        voice="autumn",
+        input=request.text,
+        response_format="wav",
+    ) as tts_response:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+            tts_response.stream_to_file(tmp.name)
+            tmp_path = tmp.name
 
-EMOJI_PATTERN = re.compile(
-    "["
-    "\U0001F300-\U0001FAFF"  # symbols & pictographs, emoticons, transport, supplemental symbols
-    "\U00002600-\U000027BF"  # misc symbols, dingbats
-    "\U0001F1E0-\U0001F1FF"  # flags
-    "\U00002190-\U000021FF"  # arrows (some emoji-adjacent)
-    "\U00002700-\U000027BF"
-    "\U0001F900-\U0001F9FF"
-    "\U00002B00-\U00002BFF"
-    "\U0000FE0F"             # variation selector (emoji presentation)
-    "]+",
-    flags=re.UNICODE,
-)
+    try:
+        with open(tmp_path, "rb") as f:
+            audio_bytes = f.read()
+    finally:
+        os.remove(tmp_path)
 
-def strip_emoji(text: str) -> str:
-    return EMOJI_PATTERN.sub("", text).strip()
+    return Response(content=audio_bytes, media_type="audio/wav")
 
 BUDDY_SYSTEM_PROMPT = """
 You are Buddy — a warm, caring best friend AND a study companion.
@@ -412,29 +413,6 @@ async def analyze_voice(audio: UploadFile = File(...)):
         }
     finally:
         os.remove(tmp_path)
-
-@app.post("/speak")
-def speak(request: SpeakRequest):
-    clean_text = strip_emoji(request.text)
-
-    tts_response = client.audio.speech.create(
-        model="canopylabs/orpheus-v1-english",
-        voice="autumn",
-        input=clean_text,
-        response_format="wav",
-    )
-
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-        tts_response.stream_to_file(tmp.name)
-        tmp_path = tmp.name
-
-    try:
-        with open(tmp_path, "rb") as f:
-            audio_bytes = f.read()
-    finally:
-        os.remove(tmp_path)
-
-    return Response(content=audio_bytes, media_type="audio/wav")
 
 @app.get("/")
 def home():
