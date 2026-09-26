@@ -58,6 +58,13 @@ def init_db():
             timestamp TEXT NOT NULL
         )
     """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS user_facts (
+            id SERIAL PRIMARY KEY,
+            fact TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL
+        )
+    """)
     conn.commit()
     cursor.close()
     conn.close()
@@ -138,6 +145,26 @@ def update_conversation_title(conversation_id, title):
     cursor.close()
     conn.close()
 
+def load_user_facts():
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT fact FROM user_facts ORDER BY id ASC")
+    rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return [row[0] for row in rows]
+
+def save_user_fact(fact):
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO user_facts (fact, created_at) VALUES (%s, %s) ON CONFLICT (fact) DO NOTHING",
+        (fact, datetime.now().isoformat()),
+    )
+    conn.commit()
+    cursor.close()
+    conn.close()
+
 class HistoryMessage(BaseModel):
     role: str
     content: str
@@ -204,13 +231,24 @@ You operate in one of two modes for each message:
 - "study" mode: the user needs academic help — explaining concepts, summarizing, solving doubts,
   making study plans, quizzing them, or breaking down problems step by step.
 
+You will also be shown facts you already know about this person from past conversations
+(if any). Use them naturally, like a friend who remembers things — don't force them in,
+just let them inform how you respond.
+
+Additionally, after each reply, note down any NEW durable facts worth remembering long-term
+from what the user just said in THIS message — things like their name, what they study,
+a recurring worry, a preference, a project they're working on. Do not repeat facts you
+were already told about them. Keep each new fact short (under 15 words), third person,
+e.g. "Their name is Ayushi." If nothing new and durable was shared, return an empty list.
+
 You must respond ONLY with valid JSON in exactly this format, nothing else, no extra text:
 
 {
   "reply": "your response to the user here, matching the mode and language below",
   "emotion": "one word like happy, sad, anxious, stressed, angry, calm, confused, excited",
   "intensity": a number from 0 to 100 representing how strong that emotion seems,
-  "detected_mode": "support" or "study" — whichever this message actually needs
+  "detected_mode": "support" or "study" — whichever this message actually needs,
+  "new_facts": ["any new durable facts learned this message, or empty list"]
 }
 
 Guidelines for intensity:
@@ -220,14 +258,18 @@ Guidelines for intensity:
 
 If intensity is high, prioritize emotional support over academic help regardless of mode.
 """
-
 HIGH_INTENSITY_THRESHOLD = 70
 BREATHING_INTENSITY_THRESHOLD = 90
 ANXIETY_RELATED_EMOTIONS = {"anxious", "panicked", "breathless", "overwhelmed", "scared", "fearful", "nervous"}
-
 @app.post("/chat")
 def chat(request: ChatRequest):
-    messages = [{"role": "system", "content": BUDDY_SYSTEM_PROMPT}]
+    known_facts = load_user_facts()
+    system_content = BUDDY_SYSTEM_PROMPT
+    if known_facts:
+        facts_block = "\n".join(f"- {f}" for f in known_facts)
+        system_content += f"\n\nHere's what you already know about this person from past conversations:\n{facts_block}"
+
+    messages = [{"role": "system", "content": system_content}]
 
     for past_msg in request.history:
         messages.append({"role": past_msg.role, "content": past_msg.content})
@@ -266,6 +308,9 @@ def chat(request: ChatRequest):
 
     save_message(conversation_id, "user", request.message, emotion, intensity)
     save_message(conversation_id, "assistant", reply, emotion, intensity)
+
+    for fact in data.get("new_facts", []):
+        save_user_fact(fact)
 
     emotion_lower = emotion.lower().strip()
     needs_breathing = intensity >= BREATHING_INTENSITY_THRESHOLD and emotion_lower in ANXIETY_RELATED_EMOTIONS
