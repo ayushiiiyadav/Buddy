@@ -86,7 +86,7 @@ Buddy/
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/your-username/buddy.git
+git clone github.com/ayushiiiyadav/Buddy.git
 cd buddy
 ```
 
